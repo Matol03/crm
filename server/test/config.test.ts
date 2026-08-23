@@ -25,9 +25,11 @@ describe('config: loadConfig + validation', () => {
     expect(cfg.bitrixBatchSize).toBe(13);
   });
 
-  it('throws when a live mode lacks its credential', () => {
+  it('throws when a live mode lacks its credential (provider-aware)', () => {
     expect(() => loadConfig({ ...base, BITRIX_MODE: 'live', BITRIX_WEBHOOK_URL: '' })).toThrow(/BITRIX_WEBHOOK_URL/);
-    expect(() => loadConfig({ ...base, LLM_MODE: 'live', DEEPSEEK_API_KEY: '' })).toThrow(/DEEPSEEK_API_KEY/);
+    expect(() => loadConfig({ ...base, LLM_MODE: 'live', LLM_PROVIDER: 'gemini', GEMINI_API_KEY: '' })).toThrow(/GEMINI_API_KEY/);
+    expect(() => loadConfig({ ...base, LLM_MODE: 'live', LLM_PROVIDER: 'deepseek', DEEPSEEK_API_KEY: '' })).toThrow(/DEEPSEEK_API_KEY/);
+    expect(() => loadConfig({ ...base, OCR_MODE: 'live', OCR_PROVIDER: 'gemini', GEMINI_API_KEY: '' })).toThrow(/GEMINI_API_KEY/);
   });
 
   it('rejects out-of-range confidence threshold', () => {

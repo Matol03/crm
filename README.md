@@ -9,11 +9,12 @@ Built to `PRD-lead-service-FINAL-for-Claude-Code.md`. See
 [`docs/architecture.md`](docs/architecture.md) and
 [`docs/decisions.md`](docs/decisions.md).
 
-> **Status:** Stage 3 complete — full pipeline in **mock mode**, real DeepSeek /
-> Gemini / Bitrix clients implemented and unit-tested against stubbed transports,
-> Section-15 metrics + a read-only ops view with resend. No live external call has
-> been made; Bitrix stays mock until go-live is approved. Microsoft Graph
-> ingestion and a real ASR provider remain deferred (mocks in place).
+> **Status:** the pipeline runs **live end-to-end on Gemini** (free tier) for
+> segmentation, extraction, and card OCR, writing to **mock Bitrix** — verified on
+> real fixtures (`npm run live-demo`). Bitrix stays mock until its webhook gets the
+> CRM scope and go-live is approved. DeepSeek clients remain as an alternate
+> provider (account needs balance). Microsoft Graph ingestion and a real ASR
+> provider are still deferred (mocks in place).
 
 ## Requirements
 

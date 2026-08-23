@@ -4,7 +4,29 @@ Living record of the calls made while building the trade-show lead service,
 including anything that diverged from `PRD-lead-service-FINAL-for-Claude-Code.md`
 and why. Newest decisions first within each section.
 
-## Live smoke-test findings (read-only, Stage 3 gate) — BLOCKERS
+## Provider decision: Gemini (free) is the live LLM + OCR; DeepSeek is the alternate
+
+DeepSeek has no free tier and the account has zero balance (402 on all
+inference), so it cannot run live. Google **Gemini** (`gemini-2.5-flash`) has a
+working free tier and is **multimodal**, so it now serves BOTH:
+- **Extraction/segmentation** (`llm/gemini.ts`, `LlmClient`)
+- **Card OCR** (`ocr/gemini.ts`, `OcrClient`)
+
+One free credential covers the whole live pipeline. Selected via
+`LLM_PROVIDER` / `OCR_PROVIDER` (`gemini` | `deepseek`); DeepSeek clients remain
+for when that account is funded. Shared JSON validation + `<=2`-retry flow live
+in `llm/validate.ts` so both providers behave identically.
+
+**Verified live** (real Gemini, mock Bitrix): the card/voice name-mismatch
+(card wins), the partner/reseller classification, and the adversarial three-cards-
+back-to-back segmentation all produce correct leads end to end.
+
+Robustness fix found during the live run: `summaryRu` is now defaulted to empty
+rather than throwing when the model omits it (a bare card may have nothing to
+summarize) — failing a whole lead over a missing *summary* violated "empty beats
+wrong". The verbatim record is unaffected.
+
+## Live smoke-test findings (read-only, Stage 3 gate)
 
 Three read-only live probes, all with owner approval. Code/request formats are
 correct in every case; the blockers are account/config on the provider side:
@@ -26,15 +48,14 @@ correct in every case; the blockers are account/config on the provider side:
 - **Original call:** DeepSeek (`deepseek-chat`/`reasoner`) had no image input, so
   OCR was made a separate adapter and Gemini was chosen for card reading.
 - **Reversal (from smoke test a):** the account's DeepSeek API actually exposes a
-  vision model, `deepseek-v4-flash-vision-exp`. So OCR now uses **DeepSeek vision**
-  (`ocr/deepseek.ts`) — one provider, one credential — and **Gemini was dropped**
-  (`ocr/gemini.ts` removed). The `OcrClient` adapter seam is unchanged; only the
-  live impl differs, and `fixture` mode still short-circuits on pre-supplied text.
-- Extraction model set to `deepseek-v4-flash` (the earlier `deepseek-chat` id is
-  not valid on this account). Vision model configurable via `DEEPSEEK_VISION_MODEL`.
+  vision model, `deepseek-v4-flash-vision-exp` — so DeepSeek vision OCR was built
+  (`ocr/deepseek.ts`). But DeepSeek has no balance, so the **live** OCR provider
+  ended up being **Gemini** (see the provider-decision section above); both vision
+  clients exist behind the unchanged `OcrClient` seam, `fixture` mode still
+  short-circuits on pre-supplied text.
 - Card↔voice reconciliation stays enforced in code (source priority, S3.3).
-- **Status:** implemented; cannot be live-validated until the DeepSeek balance
-  blocker above is resolved.
+- **Status:** Gemini OCR is live-validated; DeepSeek vision is ready for when that
+  account is funded.
 
 ### D2. Confidence gating adds deterministic validators on top of model self-confidence
 - **PRD position (S8):** fields below a per-field model confidence threshold (0.6)

@@ -1,0 +1,153 @@
+/**
+ * Shared LLM output parsing + validation (PRD Sections 6, 8).
+ *
+ * Provider-agnostic: both the DeepSeek and Gemini clients coerce raw model JSON
+ * into the strict contract shapes through these functions, so the business
+ * rules (unknown-id filtering, catch-all segment, confidence coercion, verbatim
+ * fallback) live in one place regardless of provider.
+ */
+
+import type { RawExtraction, LeadTypeRaw, ExtractionConfidence } from '../contracts/extraction.js';
+import type { SegmentationResult } from '../contracts/segmentation.js';
+import type { SessionItem } from '../contracts/session.js';
+
+export type SegItem = Pick<SessionItem, 'messageId' | 'timestamp' | 'type' | 'text' | 'transcript' | 'ocrText'>;
+
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
+/** Injectable network layer shared by text LLM clients. Returns assistant text. */
+export type ChatTransport = (messages: ChatMessage[]) => Promise<string>;
+
+/**
+ * Call the model, parse+validate JSON, retry on malformed up to the limit
+ * (PRD S8: <=2 retries then fail). Provider-agnostic — the transport hides the
+ * HTTP shape.
+ */
+export async function completeJson<T>(
+  transport: ChatTransport,
+  messages: ChatMessage[],
+  validate: (obj: unknown) => T,
+  maxJsonRetries: number,
+): Promise<T> {
+  let msgs = messages;
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= maxJsonRetries; attempt++) {
+    const raw = await transport(msgs);
+    try {
+      return validate(parseJsonLoose(raw));
+    } catch (e) {
+      lastErr = e;
+      msgs = [
+        ...msgs,
+        { role: 'assistant', content: raw.slice(0, 2000) },
+        { role: 'user', content: 'That was not valid JSON matching the required shape. Return ONLY the corrected strict JSON.' },
+      ];
+    }
+  }
+  throw new Error(`LLM returned invalid JSON after ${maxJsonRetries + 1} attempts: ${String(lastErr)}`);
+}
+
+/** Tolerate code fences / stray prose around the JSON object. */
+export function parseJsonLoose(raw: string): unknown {
+  const trimmed = raw.trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    const start = trimmed.indexOf('{');
+    const end = trimmed.lastIndexOf('}');
+    if (start !== -1 && end > start) return JSON.parse(trimmed.slice(start, end + 1));
+    throw new Error('no JSON object found');
+  }
+}
+
+export function validateSegmentation(obj: unknown, items: SegItem[]): SegmentationResult {
+  const o = obj as { segments?: unknown };
+  if (!o || !Array.isArray(o.segments)) throw new Error('missing segments[]');
+  const known = new Set(items.map((i) => i.messageId));
+  const segments = o.segments.map((s, idx) => {
+    const seg = s as { segmentId?: unknown; messageIds?: unknown; rationale?: unknown };
+    if (!Array.isArray(seg.messageIds)) throw new Error('segment.messageIds must be an array');
+    const ids = seg.messageIds.map(String).filter((id) => known.has(id));
+    return {
+      segmentId: typeof seg.segmentId === 'string' ? seg.segmentId : `seg-${idx + 1}`,
+      messageIds: ids,
+      ...(typeof seg.rationale === 'string' ? { rationale: seg.rationale } : {}),
+    };
+  });
+  // Guard: every message must be assigned; append a catch-all for any the model
+  // dropped so no input is silently lost.
+  const assigned = new Set(segments.flatMap((s) => s.messageIds));
+  const missing = items.map((i) => i.messageId).filter((id) => !assigned.has(id));
+  if (missing.length) segments.push({ segmentId: `seg-${segments.length + 1}`, messageIds: missing });
+  return { segments: segments.filter((s) => s.messageIds.length > 0) };
+}
+
+function asType<T extends string>(v: unknown, allowed: readonly T[], fallback: T): T {
+  return typeof v === 'string' && (allowed as readonly string[]).includes(v) ? (v as T) : fallback;
+}
+
+function strOrNull(v: unknown): string | null {
+  return typeof v === 'string' && v.trim() ? v : null;
+}
+
+export function validateExtraction(
+  obj: unknown,
+  input: { segmentText: string; cardText: string | null },
+): RawExtraction {
+  if (!obj || typeof obj !== 'object') throw new Error('extraction is not an object');
+  const o = obj as Record<string, unknown>;
+  const phones = Array.isArray(o.phones)
+    ? (o.phones as Array<Record<string, unknown>>)
+        .map((p) => ({ value: String(p.value ?? ''), type: asType(p.type, ['MOBILE', 'WORK', 'OTHER'] as const, 'OTHER') }))
+        .filter((p) => p.value)
+    : [];
+  const emails = Array.isArray(o.emails)
+    ? (o.emails as Array<Record<string, unknown>>)
+        .map((e) => ({ value: String(e.value ?? ''), type: asType(e.type, ['WORK', 'PERSONAL', 'OTHER'] as const, 'OTHER') }))
+        .filter((e) => e.value)
+    : [];
+  const conf = (o.confidence ?? {}) as Record<string, unknown>;
+  const num = (v: unknown): number | undefined => (typeof v === 'number' && v >= 0 && v <= 1 ? v : undefined);
+
+  // summaryRu is a nice-to-have, not a hard requirement — a bare card may have
+  // nothing to summarize. Default to empty rather than failing the whole lead.
+  const summaryRu = typeof o.summaryRu === 'string' ? o.summaryRu : '';
+
+  const leadTypeRaw: LeadTypeRaw = asType(o.leadTypeRaw, ['customer', 'partner', 'unclear'] as const, 'unclear');
+
+  const confidence: ExtractionConfidence = {};
+  const setC = (k: keyof ExtractionConfidence, v: unknown): void => {
+    const n = num(v);
+    if (n !== undefined) confidence[k] = n;
+  };
+  setC('name', conf.name);
+  setC('company', conf.company);
+  setC('position', conf.position);
+  setC('country', conf.country);
+  setC('phones', conf.phones);
+  setC('emails', conf.emails);
+  setC('productInterest', conf.productInterest);
+  setC('priority', conf.priority);
+  setC('leadType', conf.leadType);
+
+  return {
+    name: strOrNull(o.name),
+    company: strOrNull(o.company),
+    position: strOrNull(o.position),
+    country: strOrNull(o.country),
+    phones,
+    emails,
+    productInterestRaw: strOrNull(o.productInterestRaw),
+    priorityRaw: strOrNull(o.priorityRaw),
+    leadTypeRaw,
+    confidence,
+    summaryRu,
+    verbatim:
+      typeof o.verbatim === 'string' && o.verbatim.trim()
+        ? o.verbatim
+        : [input.cardText, input.segmentText].filter(Boolean).join('\n'),
+  };
+}

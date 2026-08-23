@@ -44,7 +44,12 @@ export interface AsrClient {
  * (see docs/decisions.md). `fixture` mode returns pre-supplied card text.
  */
 export interface OcrClient {
-  readCard(image: { mediaUrl?: string; bytes?: Uint8Array; ocrText?: string | null }): Promise<string | null>;
+  readCard(image: {
+    mediaUrl?: string;
+    bytes?: Uint8Array;
+    ocrText?: string | null;
+    mimeType?: string;
+  }): Promise<string | null>;
 }
 
 /** LLM: segmentation + extraction (PRD Sections 6, 8). */

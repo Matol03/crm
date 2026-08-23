@@ -13,8 +13,10 @@ import { MockMsGraphClient } from './msgraph/mock.js';
 import { MockAsrClient } from './asr/mock.js';
 import { FixtureOcrClient } from './ocr/mock.js';
 import { DeepSeekOcrClient } from './ocr/deepseek.js';
+import { GeminiOcrClient } from './ocr/gemini.js';
 import { HeuristicLlmClient } from './llm/mock.js';
 import { DeepSeekLlmClient } from './llm/deepseek.js';
+import { GeminiLlmClient } from './llm/gemini.js';
 import { MockBitrixClient } from './bitrix/mock.js';
 import { RealBitrixClient } from './bitrix/real.js';
 import { RateLimiter } from './bitrix/rateLimiter.js';
@@ -47,15 +49,25 @@ export function buildApp(cfg: AppConfig, dbPath = cfg.dbPath): App {
 
   const asr: AsrClient = new MockAsrClient();
 
-  const ocr: OcrClient =
-    cfg.ocrMode === 'deepseek'
-      ? new DeepSeekOcrClient({ apiKey: cfg.deepseekApiKey, baseUrl: cfg.deepseekBaseUrl, model: cfg.deepseekVisionModel })
-      : new FixtureOcrClient();
+  let ocr: OcrClient;
+  if (cfg.ocrMode === 'live') {
+    ocr =
+      cfg.ocrProvider === 'gemini'
+        ? new GeminiOcrClient({ apiKey: cfg.geminiApiKey, baseUrl: cfg.geminiBaseUrl, model: cfg.geminiModel })
+        : new DeepSeekOcrClient({ apiKey: cfg.deepseekApiKey, baseUrl: cfg.deepseekBaseUrl, model: cfg.deepseekVisionModel });
+  } else {
+    ocr = new FixtureOcrClient();
+  }
 
-  const llm: LlmClient =
-    cfg.llmMode === 'live'
-      ? new DeepSeekLlmClient({ apiKey: cfg.deepseekApiKey, baseUrl: cfg.deepseekBaseUrl, model: cfg.deepseekModel })
-      : new HeuristicLlmClient();
+  let llm: LlmClient;
+  if (cfg.llmMode === 'live') {
+    llm =
+      cfg.llmProvider === 'gemini'
+        ? new GeminiLlmClient({ apiKey: cfg.geminiApiKey, baseUrl: cfg.geminiBaseUrl, model: cfg.geminiModel })
+        : new DeepSeekLlmClient({ apiKey: cfg.deepseekApiKey, baseUrl: cfg.deepseekBaseUrl, model: cfg.deepseekModel });
+  } else {
+    llm = new HeuristicLlmClient();
+  }
 
   const bitrix: BitrixClient =
     cfg.bitrixMode === 'live'

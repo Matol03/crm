@@ -10,7 +10,9 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 export type Mode = 'mock' | 'live';
-export type OcrMode = 'fixture' | 'deepseek' | 'none';
+export type OcrMode = 'fixture' | 'live' | 'none';
+export type LlmProvider = 'gemini' | 'deepseek';
+export type OcrProvider = 'gemini' | 'deepseek';
 
 export interface AppConfig {
   bitrixMode: Mode;
@@ -18,6 +20,8 @@ export interface AppConfig {
   llmMode: Mode;
   asrMode: Mode;
   ocrMode: OcrMode;
+  llmProvider: LlmProvider;
+  ocrProvider: OcrProvider;
 
   bitrixWebhookUrl: string;
   bitrixDefaultOwnerId: number;
@@ -26,6 +30,10 @@ export interface AppConfig {
   deepseekBaseUrl: string;
   deepseekModel: string;
   deepseekVisionModel: string;
+
+  geminiApiKey: string;
+  geminiBaseUrl: string;
+  geminiModel: string;
 
   graph: {
     tenantId: string;
@@ -112,6 +120,8 @@ export function loadConfig(raw?: Record<string, string | undefined>): AppConfig 
     llmMode: mode(env.LLM_MODE),
     asrMode: mode(env.ASR_MODE),
     ocrMode: (env.OCR_MODE as OcrMode) || 'fixture',
+    llmProvider: env.LLM_PROVIDER === 'deepseek' ? 'deepseek' : 'gemini',
+    ocrProvider: env.OCR_PROVIDER === 'deepseek' ? 'deepseek' : 'gemini',
 
     bitrixWebhookUrl: env.BITRIX_WEBHOOK_URL ?? '',
     bitrixDefaultOwnerId: num(env.BITRIX_DEFAULT_OWNER_ID, 1),
@@ -120,6 +130,10 @@ export function loadConfig(raw?: Record<string, string | undefined>): AppConfig 
     deepseekBaseUrl: env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com',
     deepseekModel: env.DEEPSEEK_MODEL ?? 'deepseek-v4-flash',
     deepseekVisionModel: env.DEEPSEEK_VISION_MODEL ?? 'deepseek-v4-flash-vision-exp',
+
+    geminiApiKey: env.GEMINI_API_KEY ?? '',
+    geminiBaseUrl: env.GEMINI_BASE_URL ?? 'https://generativelanguage.googleapis.com',
+    geminiModel: env.GEMINI_MODEL ?? 'gemini-2.5-flash',
 
     graph: {
       tenantId: env.GRAPH_TENANT_ID ?? '',
@@ -157,16 +171,18 @@ export function validateConfig(cfg: AppConfig): void {
   if (cfg.bitrixMode === 'live' && !cfg.bitrixWebhookUrl) {
     errors.push('BITRIX_MODE=live requires BITRIX_WEBHOOK_URL');
   }
-  if (cfg.llmMode === 'live' && !cfg.deepseekApiKey) {
-    errors.push('LLM_MODE=live requires DEEPSEEK_API_KEY');
+  if (cfg.llmMode === 'live') {
+    if (cfg.llmProvider === 'gemini' && !cfg.geminiApiKey) errors.push('LLM_MODE=live with LLM_PROVIDER=gemini requires GEMINI_API_KEY');
+    if (cfg.llmProvider === 'deepseek' && !cfg.deepseekApiKey) errors.push('LLM_MODE=live with LLM_PROVIDER=deepseek requires DEEPSEEK_API_KEY');
   }
   if (cfg.msgraphMode === 'live') {
     if (!cfg.graph.tenantId || !cfg.graph.clientId || !cfg.graph.clientSecret) {
       errors.push('MSGRAPH_MODE=live requires GRAPH_TENANT_ID/CLIENT_ID/CLIENT_SECRET');
     }
   }
-  if (cfg.ocrMode === 'deepseek' && !cfg.deepseekApiKey) {
-    errors.push('OCR_MODE=deepseek requires DEEPSEEK_API_KEY');
+  if (cfg.ocrMode === 'live') {
+    if (cfg.ocrProvider === 'gemini' && !cfg.geminiApiKey) errors.push('OCR_MODE=live with OCR_PROVIDER=gemini requires GEMINI_API_KEY');
+    if (cfg.ocrProvider === 'deepseek' && !cfg.deepseekApiKey) errors.push('OCR_MODE=live with OCR_PROVIDER=deepseek requires DEEPSEEK_API_KEY');
   }
   if (cfg.confidenceThreshold < 0 || cfg.confidenceThreshold > 1) {
     errors.push('CONFIDENCE_THRESHOLD must be between 0 and 1');
@@ -184,8 +200,11 @@ export function redactedSummary(cfg: AppConfig): Record<string, unknown> {
     llmMode: cfg.llmMode,
     asrMode: cfg.asrMode,
     ocrMode: cfg.ocrMode,
+    llmProvider: cfg.llmProvider,
+    ocrProvider: cfg.ocrProvider,
     bitrixWebhookConfigured: cfg.bitrixWebhookUrl.length > 0,
     deepseekKeyConfigured: cfg.deepseekApiKey.length > 0,
+    geminiKeyConfigured: cfg.geminiApiKey.length > 0,
     idleTimeoutMs: cfg.idleTimeoutMs,
     maxSessionDurationMs: cfg.maxSessionDurationMs,
     pollIntervalMs: cfg.pollIntervalMs,

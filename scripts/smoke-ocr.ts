@@ -7,7 +7,9 @@
 
 import { readFileSync } from 'node:fs';
 import { loadConfig } from '../server/src/config/index.js';
+import { GeminiOcrClient } from '../server/src/ocr/gemini.js';
 import { DeepSeekOcrClient } from '../server/src/ocr/deepseek.js';
+import type { OcrClient } from '../server/src/contracts/index.js';
 
 async function main(): Promise<void> {
   const imgPath = process.argv[2];
@@ -16,13 +18,17 @@ async function main(): Promise<void> {
   const bytes = new Uint8Array(readFileSync(imgPath));
   const mimeType = imgPath.endsWith('.jpg') || imgPath.endsWith('.jpeg') ? 'image/jpeg' : 'image/png';
 
-  const ocr = new DeepSeekOcrClient({
-    apiKey: cfg.deepseekApiKey,
-    baseUrl: cfg.deepseekBaseUrl,
-    model: cfg.deepseekVisionModel,
-  });
+  let ocr: OcrClient;
+  let modelLabel: string;
+  if (cfg.ocrProvider === 'deepseek') {
+    ocr = new DeepSeekOcrClient({ apiKey: cfg.deepseekApiKey, baseUrl: cfg.deepseekBaseUrl, model: cfg.deepseekVisionModel });
+    modelLabel = cfg.deepseekVisionModel;
+  } else {
+    ocr = new GeminiOcrClient({ apiKey: cfg.geminiApiKey, baseUrl: cfg.geminiBaseUrl, model: cfg.geminiModel });
+    modelLabel = cfg.geminiModel;
+  }
 
-  console.log(`Sending ${bytes.length} bytes (${mimeType}) to ${cfg.deepseekVisionModel} ...\n`);
+  console.log(`Sending ${bytes.length} bytes (${mimeType}) to ${modelLabel} ...\n`);
   const t0 = performance.now();
   const text = await ocr.readCard({ bytes, mimeType });
   const ms = Math.round(performance.now() - t0);
