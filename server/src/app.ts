@@ -10,6 +10,7 @@
 import { Db } from './db/index.js';
 import { Pipeline, type PipelineDeps } from './pipeline/index.js';
 import { MockMsGraphClient } from './msgraph/mock.js';
+import { RealMsGraphClient } from './msgraph/real.js';
 import { MockAsrClient } from './asr/mock.js';
 import { FixtureOcrClient } from './ocr/mock.js';
 import { DeepSeekOcrClient } from './ocr/deepseek.js';
@@ -44,8 +45,18 @@ function pipelineConfig(cfg: AppConfig): PipelineDeps['config'] {
 export function buildApp(cfg: AppConfig, dbPath = cfg.dbPath): App {
   const db = new Db(dbPath);
 
-  // Graph: real ingestion is deferred (Q2) — mock stands in for both modes.
-  const graph: MsGraphClient = new MockMsGraphClient();
+  const graph: MsGraphClient =
+    cfg.msgraphMode === 'live'
+      ? new RealMsGraphClient({
+          tenantId: cfg.graph.tenantId,
+          clientId: cfg.graph.clientId,
+          clientSecret: cfg.graph.clientSecret,
+          teamsGroupId: cfg.graph.teamsGroupId,
+          channelId: cfg.graph.channelId,
+          // Structured, PII-free degradation notices (S13).
+          onWarn: (e) => console.warn(JSON.stringify({ level: 'warn', src: 'msgraph', ...e })),
+        })
+      : new MockMsGraphClient();
 
   const asr: AsrClient = new MockAsrClient();
 
