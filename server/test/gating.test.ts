@@ -53,6 +53,17 @@ describe('applyGate: validators', () => {
     const g = applyGate(raw({ phones: [{ value: '123', type: 'MOBILE' }] }), opts, 'src');
     expect(g.phones).toHaveLength(0);
   });
+
+  it('keeps a short local-format number (CIS 6-digit, e.g. 98-09-78)', () => {
+    const g = applyGate(raw({ phones: [{ value: '98-09-78', type: 'MOBILE' }] }), opts, 'src');
+    expect(g.phones).toHaveLength(1);
+    expect(g.warnings.some((w) => /failed format/.test(w))).toBe(false);
+  });
+
+  it('drops an implausibly long number', () => {
+    const g = applyGate(raw({ phones: [{ value: '1234567890123456789', type: 'WORK' }] }), opts, 'src');
+    expect(g.phones).toHaveLength(0);
+  });
 });
 
 describe('applyGate: Partner double-check', () => {

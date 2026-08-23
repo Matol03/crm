@@ -43,10 +43,17 @@ const PARTNER_LEXICAL = [
 
 const EMAIL_VALID = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
 
-/** Digits-only length within a plausible international phone range. */
+/**
+ * Digits-only length within a plausible phone range.
+ *
+ * Lower bound is 5, not 7: short local formats are real and common in the CIS
+ * (e.g. "98-09-78" is a standard 6-digit city number). A 7-digit floor was
+ * rejecting genuine numbers — found when a live Teams message dropped its phone.
+ * Upper bound 15 = E.164 maximum.
+ */
 function isValidPhone(value: string): boolean {
   const digits = value.replace(/\D/g, '');
-  return digits.length >= 7 && digits.length <= 15;
+  return digits.length >= 5 && digits.length <= 15;
 }
 
 export interface GateOptions {

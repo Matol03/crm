@@ -4,6 +4,32 @@ Living record of the calls made while building the trade-show lead service,
 including anything that diverged from `PRD-lead-service-FINAL-for-Claude-Code.md`
 and why. Newest decisions first within each section.
 
+## Gemini free-tier quota is a PRODUCTION blocker (not a dev one)
+
+Live runs hit `429 RESOURCE_EXHAUSTED`:
+`GenerateRequestsPerDayPerProjectPerModel-FreeTier` = **20 requests/day, per
+model**. The pipeline uses ~2 calls per session (segment + extract, plus one per
+card for OCR), so the free tier sustains roughly **7-10 sessions/day**.
+
+A major show is 200-400 contacts (PRD S1) => ~500-1000+ calls. **The free tier
+cannot run a real show.** Workarounds and the real fix:
+- *Dev/testing (in use now):* the quota is per MODEL, so switching
+  `GEMINI_MODEL` (e.g. to `gemini-3.6-flash`) yields a fresh 20/day bucket.
+- *Production:* enable billing on the Google project (paid Gemini tier), or fund
+  the DeepSeek account and set `LLM_PROVIDER=deepseek` — both are one env change,
+  no code change.
+
+Not yet implemented: retry-with-backoff on 429 for the LLM transports. It would
+help transient per-minute limits but cannot rescue an exhausted DAILY quota, so
+it is a robustness nicety rather than a fix for the above.
+
+## Phone validator floor lowered to 5 digits (live-data fix)
+
+The deterministic validator required >=7 digits and silently dropped `98-09-78`
+from a real Teams message — a standard 6-digit CIS local number. That was a false
+rejection of genuine data, the opposite of what "empty beats wrong" is for. Floor
+is now 5 digits (upper bound stays 15 = E.164 max). Regression tests added.
+
 ## Microsoft Graph: app-only auth confirmed; two permission gaps
 
 App-only (client-credentials) auth **works** against the tenant. Token `roles`
