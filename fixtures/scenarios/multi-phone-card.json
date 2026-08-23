@@ -1,0 +1,25 @@
+{
+  "sessionId": "teams|2026-08-22T10:00:00.000Z|d2c09cb5565d3c5e",
+  "channel": {
+    "teamsGroupId": "group-1",
+    "channelId": "channel-1"
+  },
+  "author": {
+    "teamsUserId": "u-ivan",
+    "email": "ivan@example.com",
+    "displayName": "Ivan Petrov"
+  },
+  "sessionWindow": {
+    "openedAt": "2026-08-22T10:00:00.000Z",
+    "closedAt": "2026-08-22T10:00:00.000Z"
+  },
+  "items": [
+    {
+      "messageId": "m13-1",
+      "timestamp": "2026-08-22T10:00:00.000Z",
+      "type": "image",
+      "ocrText": "Name: Kenji Sato\nCompany: Toyota\nCountry: Japan\nEmail: kenji@toyota.jp\nPhone: +81312345678, +818012345678, +81455551234",
+      "mediaUrl": "https://mock/card13.png"
+    }
+  ]
+}

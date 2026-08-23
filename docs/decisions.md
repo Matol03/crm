@@ -38,6 +38,33 @@ and why. Newest decisions first within each section.
 - **Decision:** base the filter on concrete extracted signals — name, phone, email,
   or `productInterest`/`priority`. The verbatim is still preserved regardless.
 
+## Stage 2 additions
+
+### S2.1 Real adapters built behind existing interfaces, still mock-first
+DeepSeek (`llm/deepseek`), Gemini OCR (`ocr/gemini`), and the real Bitrix REST
+client (`bitrix/real`) are implemented and unit-tested against **stubbed
+transports** — no live network in tests, no live Bitrix write. `buildApp` selects
+real vs mock per env mode; a fully-mock run needs zero credentials.
+
+### S2.2 DeepSeek strict-JSON handling (S8)
+`response_format: json_object`, `temperature: 0`. Malformed output retried up to
+2× (feeding the bad output back with a correction nudge); a third failure throws
+so the pipeline fails that segment loudly with verbatim preserved. Segmentation
+validator filters unknown ids and appends a catch-all segment so no message is
+silently dropped.
+
+### S2.3 Bitrix batch + backoff granularity (S10.3)
+Writes go out as `batch` requests (add/update lead + timeline comment per lead),
+chunked by `BITRIX_BATCH_SIZE` (13) to stay well under 50 sub-calls. Throttling
+errors (QUERY_LIMIT_EXCEEDED / OPERATION_TIME_LIMIT / HTTP 503/429) are retried
+with exponential backoff **at the granularity of the failing lead's sub-calls**,
+not the whole batch. One global token-bucket limiter (2 req/s) gates every call.
+
+### S2.4 Gemini needs a key to run live
+`GEMINI_API_KEY` is not yet provided, so `OCR_MODE=gemini` is implemented and
+tested but cannot run live until a key is added to `.env`. Fixture OCR remains the
+default and covers all card scenarios for development.
+
 ## Engineering decisions (PRD-open or PRD-silent)
 
 ### E1. Grouping window (PRD's own open question, S6)

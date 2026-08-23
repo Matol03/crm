@@ -1,0 +1,31 @@
+{
+  "sessionId": "teams|2026-08-22T10:00:12.000Z|908a2095d8a13d67",
+  "channel": {
+    "teamsGroupId": "group-1",
+    "channelId": "channel-1"
+  },
+  "author": {
+    "teamsUserId": "u-ivan",
+    "email": "ivan@example.com",
+    "displayName": "Ivan Petrov"
+  },
+  "sessionWindow": {
+    "openedAt": "2026-08-22T10:00:00.000Z",
+    "closedAt": "2026-08-22T10:00:12.000Z"
+  },
+  "items": [
+    {
+      "messageId": "m16-1",
+      "timestamp": "2026-08-22T10:00:00.000Z",
+      "type": "text",
+      "text": "Lead: Sara Nilsson, Ericsson, email sara@ericsson.se, wants support & SLA"
+    },
+    {
+      "messageId": "m16-2",
+      "timestamp": "2026-08-22T10:00:12.000Z",
+      "type": "image",
+      "ocrText": null,
+      "mediaUrl": "https://mock/card16-corrupted.bin"
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "sessionId": "teams|2026-08-22T10:01:00.000Z|78aabbabd5b28a36",
+  "channel": {
+    "teamsGroupId": "group-1",
+    "channelId": "channel-1"
+  },
+  "author": {
+    "teamsUserId": "u-ivan",
+    "email": "ivan@example.com",
+    "displayName": "Ivan Petrov"
+  },
+  "sessionWindow": {
+    "openedAt": "2026-08-22T10:00:00.000Z",
+    "closedAt": "2026-08-22T10:01:00.000Z"
+  },
+  "items": [
+    {
+      "messageId": "ord-mueller-1",
+      "timestamp": "2026-08-22T10:00:00.000Z",
+      "type": "image",
+      "ocrText": "Name: Hans Mueller\nCompany: Bosch\nCountry: Germany\nEmail: hans@bosch.de\nPhone: +49711222333",
+      "mediaUrl": "https://mock/ord-mueller.png"
+    },
+    {
+      "messageId": "ord-mueller-2",
+      "timestamp": "2026-08-22T10:01:00.000Z",
+      "type": "text",
+      "text": "platform demo, medium"
+    }
+  ]
+}

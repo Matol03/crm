@@ -271,6 +271,122 @@ const SCENARIOS: Scenario[] = [];
   });
 }
 
+// 12. email small-font ambiguity (a.petrov@ vs apetrov@).
+{
+  const items: SessionItem[] = [
+    {
+      messageId: 'm12-1',
+      timestamp: min(0),
+      type: 'image',
+      ocrText: card({ Name: 'Pavel Ivanov', Company: 'Rosatom', Country: 'Russia', Email: 'a.petrov@rosatom.ru', Phone: '+74951234567' }),
+      mediaUrl: 'https://mock/card12.png',
+    },
+    { messageId: 'm12-2', timestamp: min(1), type: 'text', text: 'Small font — email might be apetrov@ or a.petrov@, please confirm.' },
+  ];
+  SCENARIOS.push({
+    name: 'email-ambiguity',
+    note: 'Ambiguous email — real LLM should down-confidence; mock still extracts one.',
+    bundle: bundle(MANAGER1, items),
+    expected: { expectedLeadCount: 1, isNonLead: false, note: 'confidence-gating case', leads: [{ name: 'Pavel Ivanov', company: 'Rosatom', hasEmail: true }] },
+  });
+}
+
+// 13. card with 2-3 phone numbers.
+{
+  const items: SessionItem[] = [
+    {
+      messageId: 'm13-1',
+      timestamp: min(0),
+      type: 'image',
+      ocrText: card({ Name: 'Kenji Sato', Company: 'Toyota', Country: 'Japan', Email: 'kenji@toyota.jp', Phone: '+81312345678, +818012345678, +81455551234' }),
+      mediaUrl: 'https://mock/card13.png',
+    },
+  ];
+  SCENARIOS.push({
+    name: 'multi-phone-card',
+    note: 'Card carrying 2-3 phone numbers.',
+    bundle: bundle(MANAGER1, items),
+    expected: { expectedLeadCount: 1, isNonLead: false, note: 'multi-phone', leads: [{ name: 'Kenji Sato', company: 'Toyota', hasPhone: true }] },
+  });
+}
+
+// 14. long non-European name mixing Latin and Cyrillic.
+{
+  const items: SessionItem[] = [
+    {
+      messageId: 'm14-1',
+      timestamp: min(0),
+      type: 'image',
+      ocrText: card({ Name: 'Александр Petrov-Иванов Al-Rashid', Company: 'Казатомпром', Country: 'Kazakhstan', Email: 'a.petrov@kazatomprom.kz', Phone: '+77011234567' }),
+      mediaUrl: 'https://mock/card14.png',
+    },
+    { messageId: 'm14-2', timestamp: min(1), type: 'text', text: 'wants platform, high priority' },
+  ];
+  SCENARIOS.push({
+    name: 'mixed-script-long-name',
+    note: 'Long name mixing Latin + Cyrillic scripts.',
+    bundle: bundle(MANAGER2, items),
+    expected: { expectedLeadCount: 1, isNonLead: false, note: 'script mixing', leads: [{ company: 'Казатомпром', hasEmail: true }] },
+  });
+}
+
+// 15. noisy self-interrupting voice with RU/EN code-switching.
+{
+  const items: SessionItem[] = [
+    {
+      messageId: 'm15-1',
+      timestamp: min(0),
+      type: 'voice',
+      transcript: 'так, это... his name is Dmitry, компания GreenTech, no wait — GreenTech Solutions, он wants аналитику and, эээ, integration, email dmitry@greentech.io, срочно, call back tomorrow',
+      mediaUrl: 'https://mock/voice15.ogg',
+    },
+  ];
+  SCENARIOS.push({
+    name: 'codeswitch-voice',
+    note: 'Noisy, self-interrupting RU/EN code-switching transcript.',
+    bundle: bundle(MANAGER2, items),
+    expected: { expectedLeadCount: 1, isNonLead: false, note: 'ASR noise + code-switch', leads: [{ hasEmail: true }] },
+  });
+}
+
+// 16. unreadable/corrupted attachment, but text carries a real lead.
+{
+  const items: SessionItem[] = [
+    { messageId: 'm16-1', timestamp: min(0), type: 'text', text: 'Lead: Sara Nilsson, Ericsson, email sara@ericsson.se, wants support & SLA' },
+    { messageId: 'm16-2', timestamp: min(0.2), type: 'image', ocrText: null, mediaUrl: 'https://mock/card16-corrupted.bin' },
+  ];
+  SCENARIOS.push({
+    name: 'corrupted-attachment',
+    note: 'Unreadable attachment; lead still created from text, retry flagged.',
+    bundle: bundle(MANAGER1, items),
+    expected: { expectedLeadCount: 1, isNonLead: false, note: 'needsAttachmentRetry from unreadable file', leads: [{ hasEmail: true }] },
+  });
+}
+
+// 17-22. Ordinary leads to approach the ~20-25 lead composition target (S14).
+{
+  const ordinary: Array<[string, typeof MANAGER1, Record<string, string>, string]> = [
+    ['ord-lopez', MANAGER1, { Name: 'Diego Lopez', Company: 'Repsol', Country: 'Spain', Email: 'diego@repsol.es', Phone: '+34600111222' }, 'wants analytics'],
+    ['ord-mueller', MANAGER1, { Name: 'Hans Mueller', Company: 'Bosch', Country: 'Germany', Email: 'hans@bosch.de', Phone: '+49711222333' }, 'platform demo, medium'],
+    ['ord-rossi', MANAGER2, { Name: 'Giulia Rossi', Company: 'Ferrari', Country: 'Italy', Email: 'giulia@ferrari.it', Phone: '+39055123456' }, 'training, low priority'],
+    ['ord-kim', MANAGER2, { Name: 'Min-jun Kim', Company: 'Samsung', Country: 'South Korea', Email: 'minjun@samsung.com', Phone: '+82212345678' }, 'integration services, urgent'],
+    ['ord-haddad', MANAGER1, { Name: 'Omar Haddad', Company: 'ADNOC', Country: 'UAE', Email: 'omar@adnoc.ae', Phone: '+9712123456' }, 'support & SLA'],
+    ['ord-novak', MANAGER2, { Name: 'Petra Novak', Company: 'Skoda', Country: 'Czechia', Email: 'petra@skoda.cz', Phone: '+420212345678' }, 'wants analytics and platform'],
+  ];
+  for (const [name, mgr, fields, note] of ordinary) {
+    const items: SessionItem[] = [
+      { messageId: `${name}-1`, timestamp: min(0), type: 'image', ocrText: card(fields), mediaUrl: `https://mock/${name}.png` },
+      { messageId: `${name}-2`, timestamp: min(1), type: 'text', text: note },
+    ];
+    SCENARIOS.push({
+      name,
+      note: 'Ordinary lead (dataset volume).',
+      bundle: bundle(mgr, items),
+      expected: { expectedLeadCount: 1, isNonLead: false, note: '', leads: [{ name: fields.Name!, company: fields.Company!, hasEmail: true, hasPhone: true }] },
+    });
+  }
+}
+
 function main(): void {
   rmSync(SCEN_DIR, { recursive: true, force: true });
   mkdirSync(SCEN_DIR, { recursive: true });

@@ -1,8 +1,8 @@
 {
   "generatedFrom": "scripts/generate-fixtures.ts",
   "caveat": "Self-authored fixtures — metrics are a self-consistency check on pipeline mechanics (segmentation, idempotency, mapping), NOT independent extraction validation (PRD Section 14).",
-  "sessionCount": 12,
-  "totalExpectedLeads": 13,
+  "sessionCount": 23,
+  "totalExpectedLeads": 24,
   "sessions": [
     {
       "name": "text-first-then-card",
@@ -181,6 +181,172 @@
         {
           "name": "Lucas Rossi",
           "company": "Enel",
+          "hasEmail": true,
+          "hasPhone": true
+        }
+      ]
+    },
+    {
+      "name": "email-ambiguity",
+      "sessionId": "teams|2026-08-22T10:01:00.000Z|303618323c6bcef3",
+      "author": "ivan@example.com",
+      "expectedLeadCount": 1,
+      "isNonLead": false,
+      "note": "confidence-gating case",
+      "leads": [
+        {
+          "name": "Pavel Ivanov",
+          "company": "Rosatom",
+          "hasEmail": true
+        }
+      ]
+    },
+    {
+      "name": "multi-phone-card",
+      "sessionId": "teams|2026-08-22T10:00:00.000Z|d2c09cb5565d3c5e",
+      "author": "ivan@example.com",
+      "expectedLeadCount": 1,
+      "isNonLead": false,
+      "note": "multi-phone",
+      "leads": [
+        {
+          "name": "Kenji Sato",
+          "company": "Toyota",
+          "hasPhone": true
+        }
+      ]
+    },
+    {
+      "name": "mixed-script-long-name",
+      "sessionId": "teams|2026-08-22T10:01:00.000Z|c314d4dd833e5165",
+      "author": "olga@example.com",
+      "expectedLeadCount": 1,
+      "isNonLead": false,
+      "note": "script mixing",
+      "leads": [
+        {
+          "company": "Казатомпром",
+          "hasEmail": true
+        }
+      ]
+    },
+    {
+      "name": "codeswitch-voice",
+      "sessionId": "teams|2026-08-22T10:00:00.000Z|1196b88738933491",
+      "author": "olga@example.com",
+      "expectedLeadCount": 1,
+      "isNonLead": false,
+      "note": "ASR noise + code-switch",
+      "leads": [
+        {
+          "hasEmail": true
+        }
+      ]
+    },
+    {
+      "name": "corrupted-attachment",
+      "sessionId": "teams|2026-08-22T10:00:12.000Z|908a2095d8a13d67",
+      "author": "ivan@example.com",
+      "expectedLeadCount": 1,
+      "isNonLead": false,
+      "note": "needsAttachmentRetry from unreadable file",
+      "leads": [
+        {
+          "hasEmail": true
+        }
+      ]
+    },
+    {
+      "name": "ord-lopez",
+      "sessionId": "teams|2026-08-22T10:01:00.000Z|3032266af3f7511b",
+      "author": "ivan@example.com",
+      "expectedLeadCount": 1,
+      "isNonLead": false,
+      "note": "",
+      "leads": [
+        {
+          "name": "Diego Lopez",
+          "company": "Repsol",
+          "hasEmail": true,
+          "hasPhone": true
+        }
+      ]
+    },
+    {
+      "name": "ord-mueller",
+      "sessionId": "teams|2026-08-22T10:01:00.000Z|78aabbabd5b28a36",
+      "author": "ivan@example.com",
+      "expectedLeadCount": 1,
+      "isNonLead": false,
+      "note": "",
+      "leads": [
+        {
+          "name": "Hans Mueller",
+          "company": "Bosch",
+          "hasEmail": true,
+          "hasPhone": true
+        }
+      ]
+    },
+    {
+      "name": "ord-rossi",
+      "sessionId": "teams|2026-08-22T10:01:00.000Z|a779013a2c22ba28",
+      "author": "olga@example.com",
+      "expectedLeadCount": 1,
+      "isNonLead": false,
+      "note": "",
+      "leads": [
+        {
+          "name": "Giulia Rossi",
+          "company": "Ferrari",
+          "hasEmail": true,
+          "hasPhone": true
+        }
+      ]
+    },
+    {
+      "name": "ord-kim",
+      "sessionId": "teams|2026-08-22T10:01:00.000Z|3dfdbd5a6047ac54",
+      "author": "olga@example.com",
+      "expectedLeadCount": 1,
+      "isNonLead": false,
+      "note": "",
+      "leads": [
+        {
+          "name": "Min-jun Kim",
+          "company": "Samsung",
+          "hasEmail": true,
+          "hasPhone": true
+        }
+      ]
+    },
+    {
+      "name": "ord-haddad",
+      "sessionId": "teams|2026-08-22T10:01:00.000Z|ecb33b2402dc8988",
+      "author": "ivan@example.com",
+      "expectedLeadCount": 1,
+      "isNonLead": false,
+      "note": "",
+      "leads": [
+        {
+          "name": "Omar Haddad",
+          "company": "ADNOC",
+          "hasEmail": true,
+          "hasPhone": true
+        }
+      ]
+    },
+    {
+      "name": "ord-novak",
+      "sessionId": "teams|2026-08-22T10:01:00.000Z|a3de951e8305a488",
+      "author": "olga@example.com",
+      "expectedLeadCount": 1,
+      "isNonLead": false,
+      "note": "",
+      "leads": [
+        {
+          "name": "Petra Novak",
+          "company": "Skoda",
           "hasEmail": true,
           "hasPhone": true
         }

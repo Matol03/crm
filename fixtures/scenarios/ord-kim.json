@@ -1,0 +1,31 @@
+{
+  "sessionId": "teams|2026-08-22T10:01:00.000Z|3dfdbd5a6047ac54",
+  "channel": {
+    "teamsGroupId": "group-1",
+    "channelId": "channel-1"
+  },
+  "author": {
+    "teamsUserId": "u-olga",
+    "email": "olga@example.com",
+    "displayName": "Olga Kim"
+  },
+  "sessionWindow": {
+    "openedAt": "2026-08-22T10:00:00.000Z",
+    "closedAt": "2026-08-22T10:01:00.000Z"
+  },
+  "items": [
+    {
+      "messageId": "ord-kim-1",
+      "timestamp": "2026-08-22T10:00:00.000Z",
+      "type": "image",
+      "ocrText": "Name: Min-jun Kim\nCompany: Samsung\nCountry: South Korea\nEmail: minjun@samsung.com\nPhone: +82212345678",
+      "mediaUrl": "https://mock/ord-kim.png"
+    },
+    {
+      "messageId": "ord-kim-2",
+      "timestamp": "2026-08-22T10:01:00.000Z",
+      "type": "text",
+      "text": "integration services, urgent"
+    }
+  ]
+}

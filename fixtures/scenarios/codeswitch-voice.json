@@ -1,0 +1,25 @@
+{
+  "sessionId": "teams|2026-08-22T10:00:00.000Z|1196b88738933491",
+  "channel": {
+    "teamsGroupId": "group-1",
+    "channelId": "channel-1"
+  },
+  "author": {
+    "teamsUserId": "u-olga",
+    "email": "olga@example.com",
+    "displayName": "Olga Kim"
+  },
+  "sessionWindow": {
+    "openedAt": "2026-08-22T10:00:00.000Z",
+    "closedAt": "2026-08-22T10:00:00.000Z"
+  },
+  "items": [
+    {
+      "messageId": "m15-1",
+      "timestamp": "2026-08-22T10:00:00.000Z",
+      "type": "voice",
+      "transcript": "так, это... his name is Dmitry, компания GreenTech, no wait — GreenTech Solutions, он wants аналитику and, эээ, integration, email dmitry@greentech.io, срочно, call back tomorrow",
+      "mediaUrl": "https://mock/voice15.ogg"
+    }
+  ]
+}

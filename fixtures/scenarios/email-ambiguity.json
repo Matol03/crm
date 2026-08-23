@@ -1,0 +1,31 @@
+{
+  "sessionId": "teams|2026-08-22T10:01:00.000Z|303618323c6bcef3",
+  "channel": {
+    "teamsGroupId": "group-1",
+    "channelId": "channel-1"
+  },
+  "author": {
+    "teamsUserId": "u-ivan",
+    "email": "ivan@example.com",
+    "displayName": "Ivan Petrov"
+  },
+  "sessionWindow": {
+    "openedAt": "2026-08-22T10:00:00.000Z",
+    "closedAt": "2026-08-22T10:01:00.000Z"
+  },
+  "items": [
+    {
+      "messageId": "m12-1",
+      "timestamp": "2026-08-22T10:00:00.000Z",
+      "type": "image",
+      "ocrText": "Name: Pavel Ivanov\nCompany: Rosatom\nCountry: Russia\nEmail: a.petrov@rosatom.ru\nPhone: +74951234567",
+      "mediaUrl": "https://mock/card12.png"
+    },
+    {
+      "messageId": "m12-2",
+      "timestamp": "2026-08-22T10:01:00.000Z",
+      "type": "text",
+      "text": "Small font — email might be apetrov@ or a.petrov@, please confirm."
+    }
+  ]
+}

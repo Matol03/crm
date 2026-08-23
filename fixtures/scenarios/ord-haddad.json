@@ -1,0 +1,31 @@
+{
+  "sessionId": "teams|2026-08-22T10:01:00.000Z|ecb33b2402dc8988",
+  "channel": {
+    "teamsGroupId": "group-1",
+    "channelId": "channel-1"
+  },
+  "author": {
+    "teamsUserId": "u-ivan",
+    "email": "ivan@example.com",
+    "displayName": "Ivan Petrov"
+  },
+  "sessionWindow": {
+    "openedAt": "2026-08-22T10:00:00.000Z",
+    "closedAt": "2026-08-22T10:01:00.000Z"
+  },
+  "items": [
+    {
+      "messageId": "ord-haddad-1",
+      "timestamp": "2026-08-22T10:00:00.000Z",
+      "type": "image",
+      "ocrText": "Name: Omar Haddad\nCompany: ADNOC\nCountry: UAE\nEmail: omar@adnoc.ae\nPhone: +9712123456",
+      "mediaUrl": "https://mock/ord-haddad.png"
+    },
+    {
+      "messageId": "ord-haddad-2",
+      "timestamp": "2026-08-22T10:01:00.000Z",
+      "type": "text",
+      "text": "support & SLA"
+    }
+  ]
+}

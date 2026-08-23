@@ -9,9 +9,12 @@ Built to `PRD-lead-service-FINAL-for-Claude-Code.md`. See
 [`docs/architecture.md`](docs/architecture.md) and
 [`docs/decisions.md`](docs/decisions.md).
 
-> **Status:** Stage 1 complete — full pipeline runs end-to-end in **mock mode**
-> (no external systems). Real Microsoft Graph / ASR / DeepSeek / live Bitrix
-> writes are deferred behind adapters and gated on explicit go-live approval.
+> **Status:** Stage 2 complete — full pipeline runs end-to-end in **mock mode**,
+> and the **real** DeepSeek (LLM), Gemini (OCR), and Bitrix REST clients are
+> implemented and unit-tested against stubbed transports. No live external calls
+> happen until each mode is switched on in `.env` and go-live is approved.
+> Microsoft Graph ingestion and a real ASR provider remain deferred (mocks in
+> place). `OCR_MODE=gemini` needs a `GEMINI_API_KEY`.
 
 ## Requirements
 

@@ -1,0 +1,31 @@
+{
+  "sessionId": "teams|2026-08-22T10:01:00.000Z|c314d4dd833e5165",
+  "channel": {
+    "teamsGroupId": "group-1",
+    "channelId": "channel-1"
+  },
+  "author": {
+    "teamsUserId": "u-olga",
+    "email": "olga@example.com",
+    "displayName": "Olga Kim"
+  },
+  "sessionWindow": {
+    "openedAt": "2026-08-22T10:00:00.000Z",
+    "closedAt": "2026-08-22T10:01:00.000Z"
+  },
+  "items": [
+    {
+      "messageId": "m14-1",
+      "timestamp": "2026-08-22T10:00:00.000Z",
+      "type": "image",
+      "ocrText": "Name: Александр Petrov-Иванов Al-Rashid\nCompany: Казатомпром\nCountry: Kazakhstan\nEmail: a.petrov@kazatomprom.kz\nPhone: +77011234567",
+      "mediaUrl": "https://mock/card14.png"
+    },
+    {
+      "messageId": "m14-2",
+      "timestamp": "2026-08-22T10:01:00.000Z",
+      "type": "text",
+      "text": "wants platform, high priority"
+    }
+  ]
+}
