@@ -1,0 +1,25 @@
+{
+  "name": "lead-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Trade-show lead processing service: Microsoft Teams -> Bitrix24 CRM",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "generate-fixtures": "tsx scripts/generate-fixtures.ts",
+    "run-fixtures": "tsx scripts/run-fixture-batch.ts",
+    "start": "tsx server/src/index.ts"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8",
+    "@types/node": "^22.10.2"
+  }
+}

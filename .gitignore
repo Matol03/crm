@@ -1,0 +1,28 @@
+# Secrets — never commit
+.env
+.env.local
+*.env
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Build
+dist/
+*.tsbuildinfo
+
+# SQLite data
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+data/
+
+# Generated fixtures (regenerable via scripts/generate-fixtures.ts)
+fixtures/cards/*.png
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
