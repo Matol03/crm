@@ -4,11 +4,18 @@
  * and the idempotency ledger helpers.
  */
 
-import { DatabaseSync } from 'node:sqlite';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import type { SessionBundle } from '../contracts/index.js';
+
+// `node:sqlite` is a newer built-in that bundler resolvers (Vite/Vitest) don't
+// yet recognize and try to load as a source file. Loading it via a runtime
+// require sidesteps static import analysis while staying correct under Node/tsx.
+const nodeRequire = createRequire(import.meta.url);
+const { DatabaseSync } = nodeRequire('node:sqlite') as typeof import('node:sqlite');
+type DatabaseSync = InstanceType<typeof DatabaseSync>;
 
 const SCHEMA_PATH = resolve(dirname(fileURLToPath(import.meta.url)), 'schema.sql');
 
@@ -153,12 +160,23 @@ export class Db {
     warningsJson: string | null;
     needsAttachmentRetry: boolean;
   }): void {
+    // Upsert on the deterministic local id so re-processing after a crash/
+    // restart resumes rather than failing on a duplicate row (PRD Section 5).
     this.handle
       .prepare(
         `INSERT INTO leads
            (id, session_id, title, status, fields_json, transcript_verbatim,
             ai_summary_ru, warnings_json, needs_attachment_retry)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           title = excluded.title,
+           status = excluded.status,
+           fields_json = excluded.fields_json,
+           transcript_verbatim = excluded.transcript_verbatim,
+           ai_summary_ru = excluded.ai_summary_ru,
+           warnings_json = excluded.warnings_json,
+           needs_attachment_retry = excluded.needs_attachment_retry,
+           updated_at = datetime('now')`,
       )
       .run(
         lead.id,
