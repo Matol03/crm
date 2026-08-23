@@ -2,8 +2,10 @@
  * Real Bitrix24 REST client (PRD Section 10).
  *
  * - Every call goes through one global token-bucket rate limiter (S10.3).
- * - Writes are batched (add/update lead + timeline comment per lead), chunked to
- *   stay under 50 sub-calls per `batch` request.
+ * - Writes are batched, chunked to stay under 50 sub-calls per `batch` request.
+ *   A created lead costs 3 sub-calls (add + status re-assert + timeline
+ *   comment), an updated one 2; at the default batch size of 13 that is at most
+ *   39 sub-calls per request.
  * - Retryable throttling errors (QUERY_LIMIT_EXCEEDED / OPERATION_TIME_LIMIT,
  *   HTTP 503/429) are retried with exponential backoff at the granularity of the
  *   failing lead's sub-calls, not the whole batch (S10.3).
@@ -29,6 +31,12 @@ export interface RealBitrixOptions {
   transport: BitrixTransport;
   batchSize?: number;
   maxRetries?: number;
+  /**
+   * STATUS_ID for newly created leads. Applied on ADD ONLY — never on update,
+   * so a lead the sales team has already advanced is not dragged back to the
+   * start of the funnel by a re-process.
+   */
+  initialStatusId?: string;
   /** Base backoff in ms (doubled per attempt). */
   backoffBaseMs?: number;
   sleep?: (ms: number) => Promise<void>;
@@ -162,10 +170,25 @@ export class RealBitrixClient implements BitrixClient {
       if (d.action === 'update') {
         cmd[leadKey] = encodeCmd('crm.lead.update', { id: d.existingId, fields: this.toFields(lead) });
       } else {
+        // STATUS_ID only on create — see `initialStatusId`.
+        const fields: Record<string, unknown> = { ...this.toFields(lead) };
+        const initial = this.opts.initialStatusId ?? 'NEW';
+        if (initial) fields.STATUS_ID = initial;
         cmd[leadKey] = encodeCmd('crm.lead.add', {
-          fields: this.toFields(lead),
+          fields,
           params: { REGISTER_SONET_EVENT: 'N' },
         });
+        // This portal overrides STATUS_ID on create (verified: even a direct,
+        // non-batch crm.lead.add with STATUS_ID=NEW lands as CONVERTED), which
+        // would drop fresh leads at the END of the funnel where nobody works
+        // them. An update *does* stick, so re-assert the status in the same
+        // batch via $result. Harmless no-op if the portal setting is fixed.
+        if (initial) {
+          cmd[`status_${idx}`] = encodeCmd('crm.lead.update', {
+            id: `$result[${leadKey}]`,
+            fields: { STATUS_ID: initial },
+          });
+        }
       }
       // Timeline comment for the AI summary (never overwrites COMMENTS, S8).
       const entityId = d.action === 'update' ? String(d.existingId) : `$result[${leadKey}]`;

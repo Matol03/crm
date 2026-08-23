@@ -74,6 +74,58 @@ describe('RealBitrixClient.writeLeads (add path)', () => {
   });
 });
 
+describe('RealBitrixClient initial STATUS_ID', () => {
+  it('sets STATUS_ID on create so leads enter the funnel at NEW', async () => {
+    let addCmd = '';
+    const transport: BitrixTransport = async (method, params) => {
+      if (method === 'crm.duplicate.findbycomm') return ok({ LEAD: [] });
+      if (method === 'batch') {
+        addCmd = (params as { cmd: Record<string, string> }).cmd.lead_0 ?? '';
+        return ok({ result: { lead_0: 7001, comment_0: 1 }, result_error: {} });
+      }
+      return ok(null);
+    };
+    await client(transport).writeLeads([lead()]);
+    expect(addCmd).toContain('crm.lead.add');
+    expect(decodeURIComponent(addCmd)).toContain('fields[STATUS_ID]=NEW');
+  });
+
+  it('re-asserts STATUS_ID after create via $result (portal overrides it on add)', async () => {
+    let cmds: Record<string, string> = {};
+    const transport: BitrixTransport = async (method, params) => {
+      if (method === 'crm.duplicate.findbycomm') return ok({ LEAD: [] });
+      if (method === 'batch') {
+        cmds = (params as { cmd: Record<string, string> }).cmd;
+        return ok({ result: { lead_0: 7002, status_0: true, comment_0: 1 }, result_error: {} });
+      }
+      return ok(null);
+    };
+    const res = await client(transport).writeLeads([lead()]);
+    const status = decodeURIComponent(cmds.status_0 ?? '');
+    expect(status).toContain('crm.lead.update');
+    expect(status).toContain('id=$result[lead_0]');
+    expect(status).toContain('fields[STATUS_ID]=NEW');
+    // The status sub-call must not disturb the returned lead id.
+    expect(res[0]!.bitrixLeadId).toBe(7002);
+  });
+
+  it('does NOT set STATUS_ID on update (never drags a worked lead back)', async () => {
+    let updCmd = '';
+    const transport: BitrixTransport = async (method, params) => {
+      if (method === 'crm.duplicate.findbycomm') return ok({ LEAD: [4242] });
+      if (method === 'crm.lead.get') return ok({ ID: 4242, ASSIGNED_BY_ID: 7, UF_CRM_TEAMS_AUTHOR: 'ivan@example.com' });
+      if (method === 'batch') {
+        updCmd = (params as { cmd: Record<string, string> }).cmd.lead_0 ?? '';
+        return ok({ result: { lead_0: true, comment_0: 1 }, result_error: {} });
+      }
+      return ok(null);
+    };
+    await client(transport).writeLeads([lead()]);
+    expect(updCmd).toContain('crm.lead.update');
+    expect(decodeURIComponent(updCmd)).not.toContain('STATUS_ID');
+  });
+});
+
 describe('RealBitrixClient.writeLeads (dedup)', () => {
   it('updates when a same-author duplicate is found', async () => {
     const transport: BitrixTransport = async (method) => {

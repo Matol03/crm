@@ -87,6 +87,7 @@ export function buildApp(cfg: AppConfig, dbPath = cfg.dbPath): App {
           rateLimiter: new RateLimiter({ ratePerSec: cfg.bitrixRateLimitPerSec }),
           transport: createHttpTransport(cfg.bitrixWebhookUrl),
           batchSize: cfg.bitrixBatchSize,
+          initialStatusId: cfg.bitrixInitialStatusId,
         })
       : new MockBitrixClient();
 

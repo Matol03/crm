@@ -4,6 +4,33 @@ Living record of the calls made while building the trade-show lead service,
 including anything that diverged from `PRD-lead-service-FINAL-for-Claude-Code.md`
 and why. Newest decisions first within each section.
 
+## Portal overrides STATUS_ID on lead creation — re-asserted in the same batch
+
+Live-write verification showed newly created leads landing in **`CONVERTED`**
+("Качественный лид", sort=40) instead of **`NEW`** ("Не обработан", sort=10).
+That is the end of the funnel: sales would treat fresh, unreviewed leads as
+already qualified and never work them.
+
+Diagnosis (each step verified against the portal):
+1. The add command provably carries `fields[STATUS_ID]=NEW` (dumped the encoded
+   `cmd`), so the client was not at fault.
+2. A **direct, non-batch** `crm.lead.add` with `STATUS_ID: "NEW"` *also* returned
+   `CONVERTED` — so it is not a batch-encoding issue either; the portal itself
+   overrides the status on create.
+3. `crm.lead.update` to `NEW` **does** stick, and does not drift back (no delayed
+   automation re-converting it).
+
+Fix: keep `STATUS_ID` on the add (correct if the portal setting is ever changed)
+**and** re-assert it as a `crm.lead.update` sub-call in the *same* batch via
+`$result[lead_N]`. Verified live: the next created lead landed in `NEW`.
+Applied on create only — never on update, so a lead the sales team has advanced
+is not dragged back. Cost: a created lead is now 3 sub-calls (add + status +
+comment) instead of 2; at batch size 13 that is 39, still under the 50 limit.
+
+Worth fixing at the source too: the portal likely has a CRM mode / automation
+rule that auto-converts new leads. If that is corrected, this workaround becomes
+a harmless no-op.
+
 ## Gemini free-tier quota is a PRODUCTION blocker (not a dev one)
 
 Live runs hit `429 RESOURCE_EXHAUSTED`:

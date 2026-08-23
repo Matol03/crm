@@ -25,6 +25,8 @@ export interface AppConfig {
 
   bitrixWebhookUrl: string;
   bitrixDefaultOwnerId: number;
+  /** STATUS_ID applied to newly created leads (never on update). */
+  bitrixInitialStatusId: string;
 
   deepseekApiKey: string;
   deepseekBaseUrl: string;
@@ -125,6 +127,7 @@ export function loadConfig(raw?: Record<string, string | undefined>): AppConfig 
 
     bitrixWebhookUrl: env.BITRIX_WEBHOOK_URL ?? '',
     bitrixDefaultOwnerId: num(env.BITRIX_DEFAULT_OWNER_ID, 1),
+    bitrixInitialStatusId: env.BITRIX_INITIAL_STATUS_ID ?? 'NEW',
 
     deepseekApiKey: env.DEEPSEEK_API_KEY ?? '',
     deepseekBaseUrl: env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com',
