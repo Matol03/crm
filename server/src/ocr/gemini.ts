@@ -8,6 +8,7 @@
  */
 
 import type { OcrClient } from '../contracts/adapters.js';
+import { fetchWithRetry } from '../llm/validate.js';
 
 const OCR_PROMPT = `You are reading a business card image. Transcribe ALL visible text.
 Where a field is identifiable, emit it as "Label: value" on its own line using these labels when they apply: Name, Company, Position, Country, Email, Phone.
@@ -58,7 +59,7 @@ function defaultVisionTransport(opts: GeminiOcrOptions): VisionTransport {
   const model = opts.model ?? 'gemini-2.5-flash';
   const doFetch = opts.fetchImpl ?? fetch;
   return async (bytes, mimeType) => {
-    const res = await doFetch(`${baseUrl}/v1beta/models/${model}:generateContent?key=${opts.apiKey}`, {
+    const res = await fetchWithRetry(doFetch, `${baseUrl}/v1beta/models/${model}:generateContent?key=${opts.apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

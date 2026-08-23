@@ -38,18 +38,25 @@ async function main(): Promise<void> {
 
   const pollOnce = async (forceClose: boolean): Promise<void> => {
     const messages = await graph.getNewChannelMessages(since);
+    // Highest timestamp seen this round — only committed once the messages it
+    // covers have actually been handled (see below).
+    let highWater = since;
     if (messages.length) {
       console.log(`[poll] ${messages.length} new message(s)`);
       for (const m of messages) {
         const preview = m.items.map((i) => i.type).join(',');
         console.log(`  ${m.timestamp} ${m.author.displayName} [${preview}]`);
         buffer.add(m);
-        if (new Date(m.timestamp).getTime() > new Date(since).getTime()) since = m.timestamp;
+        if (new Date(m.timestamp).getTime() > new Date(highWater).getTime()) highWater = m.timestamp;
       }
-      db.setCampaign('graph_watermark', since);
     }
 
     const bundles = forceClose ? buffer.flushAll() : buffer.drainClosed(Date.now());
+    // A session that fails must NOT let the watermark move past its messages,
+    // or they would never be polled again and the leads would be lost silently.
+    // (The idempotency ledger only protects against duplicates, not omissions.)
+    let earliestFailure: string | null = null;
+
     for (const bundle of bundles) {
       console.log(`\n[session] ${bundle.author.email} — ${bundle.items.length} item(s)`);
       const res = await pipeline.processSession(bundle);
@@ -60,7 +67,27 @@ async function main(): Promise<void> {
         if (l.warnings.length) console.log(`    warnings: ${l.warnings.join('; ')}`);
       }
       if (res.replyText) console.log(`  reply: ${res.replyText}`);
+
+      if (res.status === 'error') {
+        const oldest = bundle.items.reduce(
+          (min, i) => (new Date(i.timestamp).getTime() < new Date(min).getTime() ? i.timestamp : min),
+          bundle.items[0]?.timestamp ?? highWater,
+        );
+        if (!earliestFailure || new Date(oldest).getTime() < new Date(earliestFailure).getTime()) {
+          earliestFailure = oldest;
+        }
+      }
     }
+
+    if (earliestFailure) {
+      // Rewind to just before the earliest failed message so it is re-polled.
+      const rewound = new Date(new Date(earliestFailure).getTime() - 1).toISOString();
+      since = new Date(rewound).getTime() < new Date(since).getTime() ? rewound : since;
+      console.log(`  [watermark] held at ${since} — failed messages will be retried`);
+    } else {
+      since = highWater;
+    }
+    db.setCampaign('graph_watermark', since);
   };
 
   if (!watch) {

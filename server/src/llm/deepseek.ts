@@ -21,6 +21,7 @@ import {
   validateSegmentation,
   validateExtraction,
   completeJson,
+  fetchWithRetry,
   type SegItem,
   type ChatMessage,
   type ChatTransport,
@@ -73,7 +74,7 @@ function defaultTransport(opts: DeepSeekOptions): ChatTransport {
   const model = opts.model ?? 'deepseek-v4-flash';
   const doFetch = opts.fetchImpl ?? fetch;
   return async (messages) => {
-    const res = await doFetch(`${baseUrl}/chat/completions`, {
+    const res = await fetchWithRetry(doFetch, `${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

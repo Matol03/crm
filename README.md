@@ -45,6 +45,38 @@ npm run bench-drain         # 400-lead rate-limited drain (virtual-clock timing)
 `metrics` prints lead-count accuracy, field precision, the headline
 cross-contamination rate, Partner precision/recall, and non-lead FP/FN.
 
+## Running permanently
+
+The service polls the Teams channel continuously and writes leads to Bitrix24.
+
+```bash
+npm run watch      # continuous poll (foreground); npm run poll for one shot
+```
+
+For unattended operation a Windows scheduled task **LeadService** runs
+`scripts/run-service.cmd` at logon, restarts every 5 min if it stops, and logs to
+`logs/service.log`. All configuration comes from `.env` (currently
+`MSGRAPH_MODE=live`, `BITRIX_MODE=live`, `LLM_MODE=live`, `OCR_MODE=live`).
+
+```powershell
+Start-ScheduledTask  -TaskName LeadService     # start now
+Stop-ScheduledTask   -TaskName LeadService     # stop
+Get-ScheduledTaskInfo -TaskName LeadService    # last run / result
+Get-Content .\logs\service.log -Tail 40 -Wait  # follow the log
+```
+
+**Durability.** The poll watermark is persisted and is deliberately **not**
+advanced past a session that failed, so transient provider errors cause a retry
+on the next poll rather than a silently lost lead. Message-level idempotency
+(`processed_messages`) makes any re-poll safe.
+
+> ⚠️ **Quota ceiling.** On the Gemini **free tier** the pipeline is capped at
+> ~20 requests/day/model (≈7-10 sessions). Continuous operation will exhaust it
+> and sessions will fail with 429 until the daily reset — they are retried
+> automatically afterwards. For real show volume enable paid Gemini billing, or
+> fund the DeepSeek account and set `LLM_PROVIDER=deepseek`. Either is an `.env`
+> change only.
+
 ## Ops view (Should-tier, read-only)
 
 ```bash

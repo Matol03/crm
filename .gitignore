@@ -26,3 +26,6 @@ fixtures/cards/*.png
 Thumbs.db
 .vscode/
 .idea/
+
+# Service logs
+logs/

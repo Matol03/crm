@@ -50,6 +50,42 @@ export async function completeJson<T>(
   throw new Error(`LLM returned invalid JSON after ${maxJsonRetries + 1} attempts: ${String(lastErr)}`);
 }
 
+/**
+ * Retry an HTTP call on transient provider failures (PRD S8 robustness).
+ *
+ * 429 (rate limited) and 5xx (overloaded/unavailable) are transient and common
+ * on shared/free LLM endpoints — a single 503 must not cost a lead when the
+ * service runs unattended. Non-transient statuses return immediately so real
+ * errors surface fast. Note: an exhausted DAILY quota also returns 429 and will
+ * still fail after the retries, by design — no amount of backoff fixes it.
+ */
+export async function fetchWithRetry(
+  doFetch: typeof fetch,
+  url: string,
+  init: RequestInit,
+  opts: { maxRetries?: number; baseDelayMs?: number; sleep?: (ms: number) => Promise<void> } = {},
+): Promise<Response> {
+  const maxRetries = opts.maxRetries ?? 3;
+  const baseDelayMs = opts.baseDelayMs ?? 1000;
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+
+  let last: Response | null = null;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const res = await doFetch(url, init);
+    if (res.ok) return res;
+    const transient = res.status === 429 || (res.status >= 500 && res.status < 600);
+    if (!transient || attempt === maxRetries) return res;
+    // Honor Retry-After when the provider supplies it.
+    const retryAfter = Number(res.headers?.get?.('retry-after') ?? '');
+    const waitMs = Number.isFinite(retryAfter) && retryAfter > 0
+      ? retryAfter * 1000
+      : baseDelayMs * 2 ** attempt;
+    last = res;
+    await sleep(waitMs);
+  }
+  return last as Response;
+}
+
 /** Tolerate code fences / stray prose around the JSON object. */
 export function parseJsonLoose(raw: string): unknown {
   const trimmed = raw.trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();

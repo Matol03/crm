@@ -18,6 +18,7 @@ import {
   validateSegmentation,
   validateExtraction,
   completeJson,
+  fetchWithRetry,
   type SegItem,
   type ChatMessage,
   type ChatTransport,
@@ -80,7 +81,7 @@ function defaultGeminiTransport(opts: GeminiLlmOptions): ChatTransport {
     };
     if (systemText) body.systemInstruction = { parts: [{ text: systemText }] };
 
-    const res = await doFetch(`${baseUrl}/v1beta/models/${model}:generateContent?key=${opts.apiKey}`, {
+    const res = await fetchWithRetry(doFetch, `${baseUrl}/v1beta/models/${model}:generateContent?key=${opts.apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
