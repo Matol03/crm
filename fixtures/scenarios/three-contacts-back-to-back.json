@@ -1,0 +1,39 @@
+{
+  "sessionId": "teams|2026-08-22T10:00:38.000Z|e5cc6619eb41d7f7",
+  "channel": {
+    "teamsGroupId": "group-1",
+    "channelId": "channel-1"
+  },
+  "author": {
+    "teamsUserId": "u-ivan",
+    "email": "ivan@example.com",
+    "displayName": "Ivan Petrov"
+  },
+  "sessionWindow": {
+    "openedAt": "2026-08-22T10:00:00.000Z",
+    "closedAt": "2026-08-22T10:00:38.000Z"
+  },
+  "items": [
+    {
+      "messageId": "m3-1",
+      "timestamp": "2026-08-22T10:00:00.000Z",
+      "type": "image",
+      "ocrText": "Name: John Smith\nCompany: Acme Corp\nCountry: USA\nEmail: john@acme.com\nPhone: +12025550101",
+      "mediaUrl": "https://mock/card3a.png"
+    },
+    {
+      "messageId": "m3-2",
+      "timestamp": "2026-08-22T10:00:15.000Z",
+      "type": "image",
+      "ocrText": "Name: Marie Dubois\nCompany: Airbus\nCountry: France\nEmail: marie@airbus.com\nPhone: +33123456789",
+      "mediaUrl": "https://mock/card3b.png"
+    },
+    {
+      "messageId": "m3-3",
+      "timestamp": "2026-08-22T10:00:38.000Z",
+      "type": "image",
+      "ocrText": "Name: Chen Wei\nCompany: Huawei\nCountry: China\nEmail: chen@huawei.com\nPhone: +8613800000000",
+      "mediaUrl": "https://mock/card3c.png"
+    }
+  ]
+}

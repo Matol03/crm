@@ -1,0 +1,32 @@
+{
+  "sessionId": "teams|2026-08-22T10:00:12.000Z|a87e6fa5f67b7b47",
+  "channel": {
+    "teamsGroupId": "group-1",
+    "channelId": "channel-1"
+  },
+  "author": {
+    "teamsUserId": "u-olga",
+    "email": "olga@example.com",
+    "displayName": "Olga Kim"
+  },
+  "sessionWindow": {
+    "openedAt": "2026-08-22T10:00:00.000Z",
+    "closedAt": "2026-08-22T10:00:12.000Z"
+  },
+  "items": [
+    {
+      "messageId": "m10-1",
+      "timestamp": "2026-08-22T10:00:00.000Z",
+      "type": "text",
+      "text": "Hot lead: Fatima Al-Sayed, ADNOC, wants support & SLA, email fatima@adnoc.ae"
+    },
+    {
+      "messageId": "m10-2",
+      "timestamp": "2026-08-22T10:00:12.000Z",
+      "type": "image",
+      "ocrText": null,
+      "attachmentPending": true,
+      "mediaUrl": "https://mock/card10.png"
+    }
+  ]
+}

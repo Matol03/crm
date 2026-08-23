@@ -77,19 +77,26 @@ export interface GatedExtraction {
   warnings: string[];
 }
 
-/** Does this segment carry enough to be a real lead (PRD Section 6)? */
+/**
+ * Does this segment carry enough to be a real lead (PRD Section 6)?
+ *
+ * Requires at least one CONCRETE signal: a name, a phone, an email, or a
+ * substantive interaction detail (productInterest / priority). The AI summary
+ * is deliberately NOT a signal — it is always generated (even a generic
+ * placeholder), so counting it would let pure noise through as a lead.
+ */
 export function isLead(e: {
   name: string | null;
   phones: ExtractedPhone[];
   emails: ExtractedEmail[];
   productInterestRaw: string | null;
-  summaryRu?: string;
+  priorityRaw?: string | null;
 }): boolean {
   const hasName = !!e.name && e.name.trim().length > 0;
   const hasPhone = e.phones.length > 0;
   const hasEmail = e.emails.length > 0;
   const hasSubstance =
     (!!e.productInterestRaw && e.productInterestRaw.trim().length > 0) ||
-    (!!e.summaryRu && e.summaryRu.trim().length >= 15);
+    (!!e.priorityRaw && e.priorityRaw.trim().length > 0);
   return hasName || hasPhone || hasEmail || hasSubstance;
 }

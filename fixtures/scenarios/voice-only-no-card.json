@@ -1,0 +1,25 @@
+{
+  "sessionId": "teams|2026-08-22T10:00:00.000Z|69a210f1707c6a22",
+  "channel": {
+    "teamsGroupId": "group-1",
+    "channelId": "channel-1"
+  },
+  "author": {
+    "teamsUserId": "u-olga",
+    "email": "olga@example.com",
+    "displayName": "Olga Kim"
+  },
+  "sessionWindow": {
+    "openedAt": "2026-08-22T10:00:00.000Z",
+    "closedAt": "2026-08-22T10:00:00.000Z"
+  },
+  "items": [
+    {
+      "messageId": "m4-1",
+      "timestamp": "2026-08-22T10:00:00.000Z",
+      "type": "voice",
+      "transcript": "Name is David Cohen, company Fintech Ltd, email david@fintech.io, wants a platform demo, medium priority.",
+      "mediaUrl": "https://mock/voice4.ogg"
+    }
+  ]
+}

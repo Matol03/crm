@@ -1,0 +1,31 @@
+{
+  "sessionId": "teams|2026-08-22T10:01:00.000Z|d2cc6afcd92b11f2",
+  "channel": {
+    "teamsGroupId": "group-1",
+    "channelId": "channel-1"
+  },
+  "author": {
+    "teamsUserId": "u-ivan",
+    "email": "ivan@example.com",
+    "displayName": "Ivan Petrov"
+  },
+  "sessionWindow": {
+    "openedAt": "2026-08-22T10:00:00.000Z",
+    "closedAt": "2026-08-22T10:01:00.000Z"
+  },
+  "items": [
+    {
+      "messageId": "m1-1",
+      "timestamp": "2026-08-22T10:00:00.000Z",
+      "type": "text",
+      "text": "Met a great prospect, interested in analytics."
+    },
+    {
+      "messageId": "m1-2",
+      "timestamp": "2026-08-22T10:01:00.000Z",
+      "type": "image",
+      "ocrText": "Name: Anna Weber\nCompany: BMW AG\nPosition: Head of Data\nCountry: Germany\nEmail: anna.weber@bmw.de\nPhone: +498912345678",
+      "mediaUrl": "https://mock/card1.png"
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "sessionId": "teams|2026-08-22T10:06:00.000Z|815ccc6b998cdfa3",
+  "channel": {
+    "teamsGroupId": "group-1",
+    "channelId": "channel-1"
+  },
+  "author": {
+    "teamsUserId": "u-olga",
+    "email": "olga@example.com",
+    "displayName": "Olga Kim"
+  },
+  "sessionWindow": {
+    "openedAt": "2026-08-22T10:05:00.000Z",
+    "closedAt": "2026-08-22T10:06:00.000Z"
+  },
+  "items": [
+    {
+      "messageId": "m9b-1",
+      "timestamp": "2026-08-22T10:05:00.000Z",
+      "type": "image",
+      "ocrText": "Name: Sven Larsson\nCompany: Volvo\nCountry: Sweden\nEmail: sven.larsson@volvo.se\nPhone: +46812345678\nMet by: Olga",
+      "mediaUrl": "https://mock/card9b.png"
+    },
+    {
+      "messageId": "m9b-2",
+      "timestamp": "2026-08-22T10:06:00.000Z",
+      "type": "text",
+      "text": "Wants a platform demo."
+    }
+  ]
+}
