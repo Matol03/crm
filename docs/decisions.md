@@ -4,20 +4,37 @@ Living record of the calls made while building the trade-show lead service,
 including anything that diverged from `PRD-lead-service-FINAL-for-Claude-Code.md`
 and why. Newest decisions first within each section.
 
+## Live smoke-test findings (read-only, Stage 3 gate) — BLOCKERS
+
+Three read-only live probes, all with owner approval. Code/request formats are
+correct in every case; the blockers are account/config on the provider side:
+
+- **DeepSeek key: valid, but account has _Insufficient Balance_ (HTTP 402).**
+  `GET /models` (free) succeeds and reveals `deepseek-v4-flash`,
+  `deepseek-v4-pro`, `deepseek-v4-flash-vision-exp`. But any inference call —
+  text OR vision — returns 402. **No live LLM/OCR until the account is funded.**
+- **Bitrix webhook: authenticates but has NO CRM scope.** `profile` returns 200;
+  every `crm.*` method returns **401 insufficient_scope**. **No live CRM read or
+  write until the webhook is granted the CRM scope** (recreate/edit the inbound
+  webhook with CRM permission).
+- Net: all three live integrations are currently blocked by owner-side
+  account/config, not by code. Everything remains validated in mock.
+
 ## Deviations from the PRD
 
-### D1. OCR is a separate adapter, not folded into the LLM vision call — DeepSeek has no vision
-- **PRD position (S7):** the business-card image is passed into the LLM's vision
-  input in the *same* extraction call, so card and voice reconcile in one pass.
-- **Reality:** the chosen LLM is **DeepSeek** (`deepseek-chat` / `deepseek-reasoner`),
-  which accepts no image input. The single-fused-call design is not implementable.
-- **Decision:** keep `ocr/` as its own adapter (`OcrClient`). In `fixture` mode it
-  returns the card text supplied on the image item, exactly as a real vision step
-  would. Real card reading (deferred) will use a **separate vision model** (Gemini
-  proposed) feeding text into DeepSeek. Card↔voice reconciliation is preserved in
-  code via the source-priority rule (card > text > voice), not lost.
-- **Status:** confirmed with owner (Q1). Real-OCR provider (Gemini vs other vs
-  skip) still open — does **not** block mock development.
+### D1 (REVISED). OCR uses DeepSeek vision — DeepSeek DOES have a vision model
+- **Original call:** DeepSeek (`deepseek-chat`/`reasoner`) had no image input, so
+  OCR was made a separate adapter and Gemini was chosen for card reading.
+- **Reversal (from smoke test a):** the account's DeepSeek API actually exposes a
+  vision model, `deepseek-v4-flash-vision-exp`. So OCR now uses **DeepSeek vision**
+  (`ocr/deepseek.ts`) — one provider, one credential — and **Gemini was dropped**
+  (`ocr/gemini.ts` removed). The `OcrClient` adapter seam is unchanged; only the
+  live impl differs, and `fixture` mode still short-circuits on pre-supplied text.
+- Extraction model set to `deepseek-v4-flash` (the earlier `deepseek-chat` id is
+  not valid on this account). Vision model configurable via `DEEPSEEK_VISION_MODEL`.
+- Card↔voice reconciliation stays enforced in code (source priority, S3.3).
+- **Status:** implemented; cannot be live-validated until the DeepSeek balance
+  blocker above is resolved.
 
 ### D2. Confidence gating adds deterministic validators on top of model self-confidence
 - **PRD position (S8):** fields below a per-field model confidence threshold (0.6)

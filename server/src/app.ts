@@ -12,7 +12,7 @@ import { Pipeline, type PipelineDeps } from './pipeline/index.js';
 import { MockMsGraphClient } from './msgraph/mock.js';
 import { MockAsrClient } from './asr/mock.js';
 import { FixtureOcrClient } from './ocr/mock.js';
-import { GeminiOcrClient } from './ocr/gemini.js';
+import { DeepSeekOcrClient } from './ocr/deepseek.js';
 import { HeuristicLlmClient } from './llm/mock.js';
 import { DeepSeekLlmClient } from './llm/deepseek.js';
 import { MockBitrixClient } from './bitrix/mock.js';
@@ -48,8 +48,8 @@ export function buildApp(cfg: AppConfig, dbPath = cfg.dbPath): App {
   const asr: AsrClient = new MockAsrClient();
 
   const ocr: OcrClient =
-    cfg.ocrMode === 'gemini'
-      ? new GeminiOcrClient({ apiKey: cfg.geminiApiKey, model: cfg.geminiModel })
+    cfg.ocrMode === 'deepseek'
+      ? new DeepSeekOcrClient({ apiKey: cfg.deepseekApiKey, baseUrl: cfg.deepseekBaseUrl, model: cfg.deepseekVisionModel })
       : new FixtureOcrClient();
 
   const llm: LlmClient =

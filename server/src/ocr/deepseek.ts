@@ -1,10 +1,11 @@
 /**
- * Gemini OCR client (PRD Section 7; deviation D1 — DeepSeek has no vision, so
- * card reading is a separate vision step feeding text into the extraction LLM).
+ * DeepSeek vision OCR client (PRD Section 7).
  *
- * Reads a business-card image and returns its text, laid out as `Label: value`
- * lines where possible, so downstream extraction consumes it identically to a
- * fixture card. The API key lives only here and is never logged.
+ * Supersedes the earlier "OCR must be a separate provider" decision (D1): the
+ * account's DeepSeek API exposes a vision model (`deepseek-v4-flash-vision-exp`),
+ * so card reading now uses the same provider/credential as extraction. Reads a
+ * business-card image via the OpenAI-compatible chat API and returns its text as
+ * `Label: value` lines. API key lives only here and is never logged.
  */
 
 import type { OcrClient } from '../contracts/adapters.js';
@@ -14,22 +15,23 @@ Where a field is identifiable, emit it as "Label: value" on its own line using t
 Include every phone/email you see. Do NOT invent or normalize values. Output plain text only, no commentary.`;
 
 /** Injectable network layer: image bytes -> transcribed text. */
-export type GeminiVisionTransport = (bytes: Uint8Array, mimeType: string) => Promise<string>;
+export type VisionTransport = (bytes: Uint8Array, mimeType: string) => Promise<string>;
 
-export interface GeminiOcrOptions {
+export interface DeepSeekOcrOptions {
   apiKey: string;
   baseUrl?: string;
+  /** The vision-capable model id (e.g. deepseek-v4-flash-vision-exp). */
   model?: string;
-  transport?: GeminiVisionTransport;
+  transport?: VisionTransport;
   fetchImpl?: typeof fetch;
   /** Used to fetch bytes when only a mediaUrl is available (e.g. via Graph). */
   fetchBytes?: (mediaUrl: string) => Promise<{ bytes: Uint8Array; mimeType: string }>;
 }
 
-export class GeminiOcrClient implements OcrClient {
-  private readonly transport: GeminiVisionTransport;
+export class DeepSeekOcrClient implements OcrClient {
+  private readonly transport: VisionTransport;
 
-  constructor(private readonly opts: GeminiOcrOptions) {
+  constructor(private readonly opts: DeepSeekOcrOptions) {
     this.transport = opts.transport ?? defaultVisionTransport(opts);
   }
 
@@ -56,33 +58,34 @@ export class GeminiOcrClient implements OcrClient {
   }
 }
 
-function defaultVisionTransport(opts: GeminiOcrOptions): GeminiVisionTransport {
-  const baseUrl = (opts.baseUrl ?? 'https://generativelanguage.googleapis.com').replace(/\/$/, '');
-  const model = opts.model ?? 'gemini-2.0-flash';
+function defaultVisionTransport(opts: DeepSeekOcrOptions): VisionTransport {
+  const baseUrl = (opts.baseUrl ?? 'https://api.deepseek.com').replace(/\/$/, '');
+  const model = opts.model ?? 'deepseek-v4-flash-vision-exp';
   const doFetch = opts.fetchImpl ?? fetch;
   return async (bytes, mimeType) => {
-    const res = await doFetch(`${baseUrl}/v1beta/models/${model}:generateContent?key=${opts.apiKey}`, {
+    const dataUrl = `data:${mimeType};base64,${Buffer.from(bytes).toString('base64')}`;
+    const res = await doFetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${opts.apiKey}`,
+      },
       body: JSON.stringify({
-        contents: [
+        model,
+        temperature: 0,
+        messages: [
           {
-            parts: [
-              { text: OCR_PROMPT },
-              { inline_data: { mime_type: mimeType, data: toBase64(bytes) } },
+            role: 'user',
+            content: [
+              { type: 'text', text: OCR_PROMPT },
+              { type: 'image_url', image_url: { url: dataUrl } },
             ],
           },
         ],
       }),
     });
-    if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);
-    const body = (await res.json()) as {
-      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-    };
-    return body.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('') ?? '';
+    if (!res.ok) throw new Error(`DeepSeek vision HTTP ${res.status}`);
+    const body = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+    return body.choices?.[0]?.message?.content ?? '';
   };
-}
-
-function toBase64(bytes: Uint8Array): string {
-  return Buffer.from(bytes).toString('base64');
 }

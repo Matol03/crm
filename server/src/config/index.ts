@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 export type Mode = 'mock' | 'live';
-export type OcrMode = 'fixture' | 'gemini' | 'none';
+export type OcrMode = 'fixture' | 'deepseek' | 'none';
 
 export interface AppConfig {
   bitrixMode: Mode;
@@ -25,9 +25,7 @@ export interface AppConfig {
   deepseekApiKey: string;
   deepseekBaseUrl: string;
   deepseekModel: string;
-
-  geminiApiKey: string;
-  geminiModel: string;
+  deepseekVisionModel: string;
 
   graph: {
     tenantId: string;
@@ -120,10 +118,8 @@ export function loadConfig(raw?: Record<string, string | undefined>): AppConfig 
 
     deepseekApiKey: env.DEEPSEEK_API_KEY ?? '',
     deepseekBaseUrl: env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com',
-    deepseekModel: env.DEEPSEEK_MODEL ?? 'deepseek-chat',
-
-    geminiApiKey: env.GEMINI_API_KEY ?? '',
-    geminiModel: env.GEMINI_MODEL ?? 'gemini-2.0-flash',
+    deepseekModel: env.DEEPSEEK_MODEL ?? 'deepseek-v4-flash',
+    deepseekVisionModel: env.DEEPSEEK_VISION_MODEL ?? 'deepseek-v4-flash-vision-exp',
 
     graph: {
       tenantId: env.GRAPH_TENANT_ID ?? '',
@@ -169,8 +165,8 @@ export function validateConfig(cfg: AppConfig): void {
       errors.push('MSGRAPH_MODE=live requires GRAPH_TENANT_ID/CLIENT_ID/CLIENT_SECRET');
     }
   }
-  if (cfg.ocrMode === 'gemini' && !cfg.geminiApiKey) {
-    errors.push('OCR_MODE=gemini requires GEMINI_API_KEY');
+  if (cfg.ocrMode === 'deepseek' && !cfg.deepseekApiKey) {
+    errors.push('OCR_MODE=deepseek requires DEEPSEEK_API_KEY');
   }
   if (cfg.confidenceThreshold < 0 || cfg.confidenceThreshold > 1) {
     errors.push('CONFIDENCE_THRESHOLD must be between 0 and 1');
@@ -190,7 +186,6 @@ export function redactedSummary(cfg: AppConfig): Record<string, unknown> {
     ocrMode: cfg.ocrMode,
     bitrixWebhookConfigured: cfg.bitrixWebhookUrl.length > 0,
     deepseekKeyConfigured: cfg.deepseekApiKey.length > 0,
-    geminiKeyConfigured: cfg.geminiApiKey.length > 0,
     idleTimeoutMs: cfg.idleTimeoutMs,
     maxSessionDurationMs: cfg.maxSessionDurationMs,
     pollIntervalMs: cfg.pollIntervalMs,
