@@ -42,7 +42,9 @@ Bitrix24 portal (mock or live)
 | `mapping/` | Exact → synonym → fuzzy(edit-distance) → null reference-list matching. |
 | `identity/` | Teams author → Bitrix owner, flagged default fallback. |
 | `pipeline/` | The orchestrator that wires all of the above per session. |
-| `app.ts` | Mock wiring factory shared by the batch runner and tests. |
+| `metrics/` | Scoring against ground truth: lead-count, field precision, cross-contamination, Partner P/R, non-lead FP/FN (S15). |
+| `api/` | Read-only ops HTTP surface (Node `http`, shared-secret gate): lead list/detail + resend on failed (S12). |
+| `app.ts` | Mode-selecting wiring (`buildApp`) + all-mock factory (`buildMockApp`) shared by the runner and tests. |
 
 ## Adapter seams (why the provider choices don't leak)
 

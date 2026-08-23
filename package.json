@@ -13,7 +13,10 @@
     "test:watch": "vitest",
     "generate-fixtures": "tsx scripts/generate-fixtures.ts",
     "run-fixtures": "tsx scripts/run-fixture-batch.ts",
-    "start": "tsx server/src/index.ts"
+    "metrics": "tsx scripts/run-metrics.ts",
+    "bench-drain": "tsx scripts/bench-drain.ts",
+    "start": "tsx server/src/index.ts",
+    "start:api": "tsx server/src/api/server.ts"
   },
   "dependencies": {},
   "devDependencies": {

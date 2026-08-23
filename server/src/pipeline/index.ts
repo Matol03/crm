@@ -25,6 +25,7 @@ import type {
 } from '../contracts/index.js';
 import type { Db } from '../db/index.js';
 import { applyGate } from '../extraction/gating.js';
+import { reconcileName } from '../extraction/sourcePriority.js';
 import { isLead } from '../contracts/extraction.js';
 import { buildListFields, type Campaign, type ListValuesByField } from '../mapping/leadFields.js';
 import { resolveOwner } from '../identity/index.js';
@@ -111,6 +112,12 @@ export class Pipeline {
 
         const raw = await this.deps.llm.extract({ segmentText, cardText });
         const gated = applyGate(raw, { confidenceThreshold: this.deps.config.confidenceThreshold }, `${segmentText}\n${cardText ?? ''}`);
+
+        // Source-priority: the business card wins name conflicts (S8), with the
+        // discrepancy logged rather than hidden.
+        const reconciled = reconcileName(gated.name, cardText);
+        gated.name = reconciled.name;
+        if (reconciled.warning) gated.warnings.push(reconciled.warning);
 
         // Non-lead filter (S6): skip segments without a name/phone/email/substance.
         if (!isLead({ name: gated.name, phones: gated.phones, emails: gated.emails, productInterestRaw: gated.productInterestRaw, priorityRaw: gated.priorityRaw })) {

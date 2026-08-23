@@ -55,6 +55,7 @@ interface StoredLead {
   id: number;
   fields: Record<string, unknown>;
   ownerId: number;
+  teamsAuthor: string;
   phones: string[];
   emails: string[];
   timelineComments: string[];
@@ -88,7 +89,7 @@ export class MockBitrixClient implements BitrixClient {
       const phoneHit = comm.phones.some((p) => lead.phones.includes(p));
       const emailHit = comm.emails.some((e) => lead.emails.includes(e.toLowerCase()));
       if (phoneHit || emailHit) {
-        return { bitrixLeadId: lead.id, ownerId: lead.ownerId };
+        return { bitrixLeadId: lead.id, ownerId: lead.ownerId, teamsAuthor: lead.teamsAuthor };
       }
     }
     return null;
@@ -101,9 +102,11 @@ export class MockBitrixClient implements BitrixClient {
       const phones = lead.phones.map((p) => p.value);
       const emails = lead.emails.map((e) => e.value.toLowerCase());
 
-      // Content-based dedup: same-owner duplicate -> update, else create.
+      // Content-based dedup: same-author duplicate -> update, else create.
+      // Keyed on Teams author (real manager identity), so two managers on the
+      // same visitor never merge even when both fall back to the default owner.
       const dup = await this.findDuplicate({ phones, emails });
-      if (dup && dup.ownerId === lead.assignedById) {
+      if (dup && dup.teamsAuthor === lead.service.teamsAuthor) {
         const existing = this.leads.get(dup.bitrixLeadId)!;
         existing.fields = { ...existing.fields, ...this.toFields(lead) };
         existing.timelineComments.push(lead.aiSummaryRu);
@@ -121,6 +124,7 @@ export class MockBitrixClient implements BitrixClient {
         id,
         fields: this.toFields(lead),
         ownerId: lead.assignedById,
+        teamsAuthor: lead.service.teamsAuthor,
         phones,
         emails,
         timelineComments: [lead.aiSummaryRu],

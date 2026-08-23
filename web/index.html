@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lead Service — Ops</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #171a21;
+      --panel-2: #1e222b;
+      --border: #2a2f3a;
+      --text: #e6e9ef;
+      --muted: #99a0ad;
+      --accent: #4b8bff;
+      --green: #2ea043;
+      --red: #d1242f;
+      --grey: #6b7280;
+      --amber: #b7791f;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    header {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      padding: 14px 20px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }
+    header h1 { font-size: 16px; margin: 0 12px 0 0; font-weight: 600; }
+    input[type="password"], input[type="text"] {
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 7px 10px;
+      min-width: 220px;
+    }
+    button {
+      background: var(--accent);
+      color: #fff;
+      border: 0;
+      border-radius: 6px;
+      padding: 8px 14px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    button.secondary { background: var(--panel-2); border: 1px solid var(--border); color: var(--text); }
+    button:disabled { opacity: 0.5; cursor: default; }
+    #status { color: var(--muted); margin-left: auto; }
+    .wrap { display: flex; gap: 16px; padding: 16px 20px; align-items: flex-start; }
+    .list { flex: 1 1 55%; min-width: 0; }
+    .detail { flex: 1 1 45%; min-width: 0; position: sticky; top: 72px; }
+    table { width: 100%; border-collapse: collapse; background: var(--panel); border-radius: 8px; overflow: hidden; }
+    th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+    tbody tr { cursor: pointer; }
+    tbody tr:hover { background: var(--panel-2); }
+    tbody tr.selected { background: #223; }
+    .badge {
+      display: inline-block; padding: 2px 8px; border-radius: 999px;
+      font-size: 12px; font-weight: 600; color: #fff;
+    }
+    .badge.done { background: var(--green); }
+    .badge.failed { background: var(--red); }
+    .badge.other { background: var(--grey); }
+    .tag {
+      display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px;
+      font-size: 11px; font-weight: 600; background: var(--amber); color: #fff;
+    }
+    .panel {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 8px; padding: 16px;
+    }
+    .panel h2 { margin: 0 0 4px; font-size: 15px; }
+    .panel h3 { margin: 18px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+    pre {
+      background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
+      padding: 10px; overflow: auto; margin: 0; white-space: pre-wrap; word-break: break-word;
+      font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    ul { margin: 0; padding-left: 18px; }
+    .warn { color: var(--amber); }
+    .msg { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; background: var(--panel-2); }
+    .msg .meta { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+    .muted { color: var(--muted); }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Lead Service — Ops</h1>
+    <input id="secret" type="password" placeholder="API secret" autocomplete="off" />
+    <button id="load">Load leads</button>
+    <span id="status"></span>
+  </header>
+
+  <div class="wrap">
+    <div class="list">
+      <table>
+        <thead>
+          <tr><th>Title</th><th>Status</th><th>Bitrix ID</th></tr>
+        </thead>
+        <tbody id="rows">
+          <tr><td colspan="3" class="muted">Enter the API secret and press “Load leads”.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="detail">
+      <div class="panel" id="detail">
+        <p class="muted">Select a lead to see details.</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    'use strict';
+    const $ = (id) => document.getElementById(id);
+    const secretInput = $('secret');
+    const statusEl = $('status');
+    const rowsEl = $('rows');
+    const detailEl = $('detail');
+
+    // Restore the secret for this tab session only (never persisted to disk).
+    secretInput.value = sessionStorage.getItem('apiSecret') || '';
+    secretInput.addEventListener('input', () => {
+      sessionStorage.setItem('apiSecret', secretInput.value);
+    });
+
+    function secret() { return secretInput.value.trim(); }
+    function setStatus(t, isErr) { statusEl.textContent = t || ''; statusEl.style.color = isErr ? 'var(--red)' : 'var(--muted)'; }
+    function esc(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    async function api(path, opts) {
+      const o = opts || {};
+      const headers = Object.assign({ 'x-api-secret': secret() }, o.headers || {});
+      const res = await fetch(path, Object.assign({}, o, { headers }));
+      let body = null;
+      try { body = await res.json(); } catch (_) { /* ignore */ }
+      return { res, body };
+    }
+
+    function badge(status) {
+      const cls = status === 'done' ? 'done' : status === 'failed' ? 'failed' : 'other';
+      return '<span class="badge ' + cls + '">' + esc(status) + '</span>';
+    }
+
+    let selectedId = null;
+
+    async function loadLeads() {
+      if (!secret()) { setStatus('Enter the API secret first.', true); return; }
+      setStatus('Loading…');
+      const { res, body } = await api('/api/leads');
+      if (res.status === 401) { setStatus('Unauthorized — check the secret.', true); return; }
+      if (!res.ok || !Array.isArray(body)) { setStatus('Failed to load leads.', true); return; }
+      renderRows(body);
+      setStatus(body.length + ' lead(s).');
+    }
+
+    function renderRows(leads) {
+      if (!leads.length) {
+        rowsEl.innerHTML = '<tr><td colspan="3" class="muted">No leads yet.</td></tr>';
+        return;
+      }
+      rowsEl.innerHTML = leads.map((l) => {
+        const retry = l.needsAttachmentRetry ? '<span class="tag">retry</span>' : '';
+        const bx = l.bitrixLeadId == null ? '<span class="muted">—</span>' : esc(l.bitrixLeadId);
+        const sel = l.id === selectedId ? ' class="selected"' : '';
+        return '<tr' + sel + ' data-id="' + esc(l.id) + '">' +
+          '<td>' + esc(l.title || '(untitled)') + '</td>' +
+          '<td>' + badge(l.status) + retry + '</td>' +
+          '<td class="mono">' + bx + '</td></tr>';
+      }).join('');
+      Array.from(rowsEl.querySelectorAll('tr[data-id]')).forEach((tr) => {
+        tr.addEventListener('click', () => loadDetail(tr.getAttribute('data-id')));
+      });
+    }
+
+    async function loadDetail(id) {
+      selectedId = id;
+      Array.from(rowsEl.querySelectorAll('tr[data-id]')).forEach((tr) => {
+        tr.classList.toggle('selected', tr.getAttribute('data-id') === id);
+      });
+      setStatus('Loading lead…');
+      const { res, body } = await api('/api/leads/' + encodeURIComponent(id));
+      if (res.status === 404) { detailEl.innerHTML = '<p class="warn">Lead not found.</p>'; setStatus(''); return; }
+      if (!res.ok) { setStatus('Failed to load lead.', true); return; }
+      renderDetail(body);
+      setStatus('');
+    }
+
+    function renderDetail(d) {
+      const warnings = Array.isArray(d.warnings) ? d.warnings : [];
+      const msgs = Array.isArray(d.sourceMessages) ? d.sourceMessages : [];
+      const retry = d.needsAttachmentRetry ? '<span class="tag">retry</span>' : '';
+
+      let html = '';
+      html += '<h2>' + esc(d.title || '(untitled)') + '</h2>';
+      html += '<div>' + badge(d.status) + retry +
+        (d.bitrixLeadId != null ? ' <span class="muted mono">Bitrix #' + esc(d.bitrixLeadId) + '</span>' : '') +
+        '</div>';
+
+      if (d.status === 'failed') {
+        html += '<div style="margin-top:12px"><button id="resend">Resend to pipeline</button></div>';
+      }
+
+      html += '<h3>Extracted fields</h3><pre>' + esc(JSON.stringify(d.fields, null, 2)) + '</pre>';
+
+      html += '<h3>Verbatim</h3>' +
+        (d.verbatim ? '<pre>' + esc(d.verbatim) + '</pre>' : '<p class="muted">—</p>');
+
+      html += '<h3>AI summary (RU)</h3>' +
+        (d.aiSummaryRu ? '<pre>' + esc(d.aiSummaryRu) + '</pre>' : '<p class="muted">—</p>');
+
+      html += '<h3>Warnings</h3>';
+      html += warnings.length
+        ? '<ul>' + warnings.map((w) => '<li class="warn">' + esc(w) + '</li>').join('') + '</ul>'
+        : '<p class="muted">None</p>';
+
+      html += '<h3>Source messages</h3>';
+      if (!msgs.length) {
+        html += '<p class="muted">None</p>';
+      } else {
+        html += msgs.map((m) => {
+          const text = m.text || m.transcript || m.ocrText || '';
+          return '<div class="msg">' +
+            '<div class="meta mono">' + esc(m.messageId) + ' · ' + esc(m.type) + '</div>' +
+            (text ? '<div>' + esc(text) + '</div>' : '<div class="muted">(no text)</div>') +
+            '</div>';
+        }).join('');
+      }
+
+      detailEl.innerHTML = html;
+
+      const rb = $('resend');
+      if (rb) rb.addEventListener('click', () => resend(d.id));
+    }
+
+    async function resend(id) {
+      const rb = $('resend');
+      if (rb) rb.disabled = true;
+      setStatus('Resending…');
+      const { res, body } = await api('/api/leads/' + encodeURIComponent(id) + '/resend', { method: 'POST' });
+      if (res.status === 409) { setStatus('Lead is not in failed state.', true); if (rb) rb.disabled = false; return; }
+      if (!res.ok) { setStatus('Resend failed.', true); if (rb) rb.disabled = false; return; }
+      detailEl.insertAdjacentHTML('beforeend',
+        '<h3>Resend result</h3><pre>' + esc(JSON.stringify(body.result, null, 2)) + '</pre>');
+      setStatus('Resend complete — reloading list.');
+      await loadLeads();
+      await loadDetail(id);
+    }
+
+    $('load').addEventListener('click', loadLeads);
+    secretInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') loadLeads(); });
+  </script>
+</body>
+</html>

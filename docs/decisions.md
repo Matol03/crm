@@ -38,6 +38,39 @@ and why. Newest decisions first within each section.
 - **Decision:** base the filter on concrete extracted signals — name, phone, email,
   or `productInterest`/`priority`. The verbatim is still preserved regardless.
 
+## Stage 3 additions
+
+### S3.1 Content dedup keys on Teams author, not the resolved owner (bug fix)
+The PRD (S10.4) phrases dedup as "same **owner** → update, different owner →
+separate." But two *unmapped* managers both fall back to the configured default
+owner (S10.5), so keying on owner silently **merged** their two legitimate leads
+on the same visitor — violating the Must-tier "two managers → two leads"
+guarantee. Found via the ops UI (both Sven Larsson leads showed one Bitrix id).
+Fix: dedup-update only when the matched lead's **Teams author** matches; the
+author is the real manager identity. Owner is still assigned per author.
+Regression test added (two unmapped managers → two leads).
+
+### S3.2 Partner markers restricted to intent-bearing terms
+The bare noun "partner" over-triggered on incidental phrasing ("partner booth"),
+producing a false Partner (the expensive asymmetric error, S8). Surfaced by the
+metrics run (Partner precision 50%). `PARTNER_LEXICAL` / mock `PARTNER_MARKERS`
+now require reseller/distributor/partnership-style language; the true-partner
+fixtures still match. Partner precision back to 100%.
+
+### S3.3 Source-priority enforced in code for the name field (S8)
+Beyond prompting the model to prefer the card, `reconcileName` re-checks the
+extracted name against the card's structured `Name:` value: card wins any
+conflict, and the discrepancy is logged as a warning (never hidden) — the PRD's
+canonical "Aleksandr Ivanovich Petrov" vs "Sasha Petrov" example.
+
+### S3.4 Drain-throughput finding (S15 / S10.3)
+The 400-lead drain benchmark (virtual clock) shows per-lead dedup reads
+(findbycomm ×2) dominate the call count (~800 vs ~31 write batches) → ~415s
+simulated at 2 req/s, vs the ~200s the write path alone predicts. Per session
+(1–3 leads) this is negligible and well under the ~1-min reply goal; batching the
+dedup lookups is the documented next optimization if full-show drain latency
+matters. Not implemented now (write robustness prioritized over drain speed).
+
 ## Stage 2 additions
 
 ### S2.1 Real adapters built behind existing interfaces, still mock-first

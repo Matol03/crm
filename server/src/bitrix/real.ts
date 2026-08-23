@@ -101,7 +101,8 @@ export class RealBitrixClient implements BitrixClient {
     if (leadId == null) return null;
     const lead = await this.getLead(leadId);
     const ownerId = lead ? Number(lead.fields.ASSIGNED_BY_ID) : 0;
-    return { bitrixLeadId: leadId, ownerId };
+    const teamsAuthor = lead ? (lead.fields.UF_CRM_TEAMS_AUTHOR as string | undefined) ?? null : null;
+    return { bitrixLeadId: leadId, ownerId, teamsAuthor };
   }
 
   private async findByComm(type: 'EMAIL' | 'PHONE', values: string[]): Promise<number | null> {
@@ -130,7 +131,9 @@ export class RealBitrixClient implements BitrixClient {
         phones: lead.phones.map((p) => p.value),
         emails: lead.emails.map((e) => e.value),
       });
-      if (dup && dup.ownerId === lead.assignedById) {
+      // Update only a same-author duplicate; a different manager's lead on the
+      // same visitor stays separate even if both resolve to the default owner.
+      if (dup && dup.teamsAuthor === lead.service.teamsAuthor) {
         decisions.set(lead.localId, { action: 'update', existingId: dup.bitrixLeadId });
       } else {
         decisions.set(lead.localId, { action: 'add' });

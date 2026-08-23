@@ -19,16 +19,26 @@ import type {
   ExtractedEmail,
 } from '../contracts/extraction.js';
 
+// Intent-bearing markers only. Deliberately NOT the bare noun "partner"/"партн",
+// which over-triggers on incidental phrasing ("partner booth") and produces the
+// expensive false-Partner error (S8). The true-partner cases use reseller/
+// distributor/partnership language, which these still catch.
 const PARTNER_LEXICAL = [
-  'partner',
   'reseller',
-  'distributor',
   'resell',
+  'distributor',
+  'distribution rights',
   'dealer',
-  'партн',
+  'become a partner',
+  'be our partner',
+  'as a partner',
+  'want to partner',
+  'partnership',
   'дистрибь',
   'реселлер',
   'дилер',
+  'партнёрств',
+  'партнерств',
 ];
 
 const EMAIL_VALID = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;

@@ -131,6 +131,19 @@ describe('pipeline: accuracy-adjacent behaviors', () => {
     expect(new Set(leads.map((l) => l.ownerId))).toEqual(new Set([7, 9]));
   });
 
+  it('two UNMAPPED managers on one visitor still produce two leads (default-owner regression)', async () => {
+    const app = buildMockApp(CFG); // no employee_map -> both fall back to default owner
+    const commonCard = card({ Name: 'Sven Larsson', Company: 'Volvo', Email: 'sven@volvo.se', Phone: '+46812345678' });
+    await app.pipeline.processSession(
+      bundle(IVAN, [{ messageId: 'iv1', timestamp: '2026-08-22T10:00:00Z', type: 'image', ocrText: commonCard }]),
+    );
+    await app.pipeline.processSession(
+      bundle(OLGA, [{ messageId: 'ol1', timestamp: '2026-08-22T10:05:00Z', type: 'image', ocrText: commonCard }]),
+    );
+    // Dedup keys on Teams author, not the (shared) default owner -> not merged.
+    expect(app.bitrix.allLeads()).toHaveLength(2);
+  });
+
   it('same-owner duplicate updates the existing lead instead of creating a new one', async () => {
     const app = buildMockApp(CFG);
     const b1 = bundle(IVAN, [{ messageId: 'd1', timestamp: '2026-08-22T10:00:00Z', type: 'image', ocrText: card({ Name: 'Dup Person', Email: 'dup@x.com', Phone: '+70000000000' }) }]);

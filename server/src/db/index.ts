@@ -100,6 +100,18 @@ export class Db {
     return this.alreadyProcessed(messageIds).size === messageIds.length;
   }
 
+  /**
+   * Drop a session's messages from the idempotency ledger so the next
+   * `processSession` re-runs them (used by the ops resend route). The pipeline
+   * stays idempotent — Bitrix content dedup and the lead upsert make the re-run
+   * update-in-place rather than duplicate (PRD Section 12 / 10.4).
+   */
+  clearProcessedForSession(sessionId: string): void {
+    this.handle
+      .prepare('DELETE FROM processed_messages WHERE session_id = ?')
+      .run(sessionId);
+  }
+
   /** Record messages as processed. Idempotent (INSERT OR IGNORE). */
   markProcessed(messageIds: string[], sessionId: string): void {
     const stmt = this.handle.prepare(

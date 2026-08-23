@@ -62,6 +62,13 @@ export interface LeadWriteResult {
 export interface DuplicateMatch {
   bitrixLeadId: number;
   ownerId: number;
+  /**
+   * The matched lead's Teams author. Dedup keys on this (the real manager
+   * identity), not the resolved owner: two unmapped managers both fall back to
+   * the default owner, and keying on owner would wrongly merge their two
+   * legitimate leads on the same visitor (S10.4 intent).
+   */
+  teamsAuthor?: string | null;
 }
 
 export interface BitrixClient {

@@ -9,12 +9,11 @@ Built to `PRD-lead-service-FINAL-for-Claude-Code.md`. See
 [`docs/architecture.md`](docs/architecture.md) and
 [`docs/decisions.md`](docs/decisions.md).
 
-> **Status:** Stage 2 complete — full pipeline runs end-to-end in **mock mode**,
-> and the **real** DeepSeek (LLM), Gemini (OCR), and Bitrix REST clients are
-> implemented and unit-tested against stubbed transports. No live external calls
-> happen until each mode is switched on in `.env` and go-live is approved.
-> Microsoft Graph ingestion and a real ASR provider remain deferred (mocks in
-> place). `OCR_MODE=gemini` needs a `GEMINI_API_KEY`.
+> **Status:** Stage 3 complete — full pipeline in **mock mode**, real DeepSeek /
+> Gemini / Bitrix clients implemented and unit-tested against stubbed transports,
+> Section-15 metrics + a read-only ops view with resend. No live external call has
+> been made; Bitrix stays mock until go-live is approved. Microsoft Graph
+> ingestion and a real ASR provider remain deferred (mocks in place).
 
 ## Requirements
 
@@ -38,10 +37,22 @@ committed (PRD Section 13).
 ```bash
 npm run generate-fixtures   # build the synthetic dataset + ground truth
 npm run run-fixtures        # feed fixtures through the full pipeline -> mock Bitrix
+npm run metrics             # Section-15 accuracy metrics vs ground truth
+npm run bench-drain         # 400-lead rate-limited drain (virtual-clock timing)
 ```
 
-`run-fixtures` prints per-session results and Section-15 self-consistency metrics
-(lead-count accuracy, leads created, batch calls, replies posted).
+`metrics` prints lead-count accuracy, field precision, the headline
+cross-contamination rate, Partner precision/recall, and non-lead FP/FN.
+
+## Ops view (Should-tier, read-only)
+
+```bash
+npm run start:api           # serves the read-only lead view + resend on :API_PORT
+```
+
+Open `http://localhost:<API_PORT>/`, enter `API_SHARED_SECRET`, and browse leads
+(status, warnings, verbatim, AI summary, source messages). `failed` leads have a
+resend action. Auth is a single shared secret (header `x-api-secret` or `?secret`).
 
 ## Test
 

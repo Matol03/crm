@@ -75,10 +75,10 @@ describe('RealBitrixClient.writeLeads (add path)', () => {
 });
 
 describe('RealBitrixClient.writeLeads (dedup)', () => {
-  it('updates when a same-owner duplicate is found', async () => {
+  it('updates when a same-author duplicate is found', async () => {
     const transport: BitrixTransport = async (method) => {
       if (method === 'crm.duplicate.findbycomm') return ok({ LEAD: [4242] });
-      if (method === 'crm.lead.get') return ok({ ID: 4242, ASSIGNED_BY_ID: 7 }); // same owner
+      if (method === 'crm.lead.get') return ok({ ID: 4242, ASSIGNED_BY_ID: 7, UF_CRM_TEAMS_AUTHOR: 'ivan@example.com' }); // same author
       if (method === 'batch') return ok({ result: { lead_0: 4242, comment_0: 1 }, result_error: {} });
       return ok(null);
     };
@@ -87,14 +87,15 @@ describe('RealBitrixClient.writeLeads (dedup)', () => {
     expect(res[0]!.bitrixLeadId).toBe(4242);
   });
 
-  it('creates a separate lead when the duplicate belongs to a different owner (S10.4)', async () => {
+  it('creates a separate lead when the duplicate belongs to a different manager (S10.4)', async () => {
     const transport: BitrixTransport = async (method) => {
       if (method === 'crm.duplicate.findbycomm') return ok({ LEAD: [4242] });
-      if (method === 'crm.lead.get') return ok({ ID: 4242, ASSIGNED_BY_ID: 99 }); // different owner
+      // Different Teams author even though both collapse to the default owner.
+      if (method === 'crm.lead.get') return ok({ ID: 4242, ASSIGNED_BY_ID: 1, UF_CRM_TEAMS_AUTHOR: 'olga@example.com' });
       if (method === 'batch') return ok({ result: { lead_0: 5002, comment_0: 1 }, result_error: {} });
       return ok(null);
     };
-    const res = await client(transport).writeLeads([lead({ assignedById: 7 })]);
+    const res = await client(transport).writeLeads([lead({ assignedById: 1 })]);
     expect(res[0]!.updatedExisting).toBe(false);
     expect(res[0]!.bitrixLeadId).toBe(5002);
   });

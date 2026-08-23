@@ -32,15 +32,20 @@ const SEGMENT_MARKERS = [
   'другой контакт',
 ];
 
+// Intent-bearing markers only (mirrors extraction/gating PARTNER_LEXICAL) — the
+// bare noun "partner" over-triggers on incidental phrasing like "partner booth".
 const PARTNER_MARKERS = [
-  'partner',
   'reseller',
+  'resell',
   'distributor',
   'want to resell',
-  'партн', // партнёр / партнер
+  'become a partner',
+  'partnership',
   'дистрибь',
   'реселлер',
   'дилер',
+  'партнёрств',
+  'партнерств',
 ];
 
 const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
