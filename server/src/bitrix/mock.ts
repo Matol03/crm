@@ -21,14 +21,15 @@ export const SEED_USERFIELD_VALUES: Record<string, Array<{ label: string; id: nu
     { label: 'Partner', id: 45 },
     { label: 'Customer', id: 47 },
   ],
+  // Labels verified live against the portal via crm.lead.userfield.list.
   UF_CRM_REGION: [
     { label: 'Europe', id: 49 },
     { label: 'CIS', id: 51 },
-    { label: 'Middle East', id: 53 },
-    { label: 'Asia', id: 55 },
-    { label: 'Africa', id: 57 },
-    { label: 'North America', id: 59 },
-    { label: 'South America', id: 61 },
+    { label: 'MENA', id: 53 },
+    { label: 'APAC', id: 55 },
+    { label: 'North America', id: 57 },
+    { label: 'LATAM', id: 59 },
+    { label: 'Africa', id: 61 },
   ],
   UF_CRM_EXHIBITION: [
     { label: 'Hannover Messe 2026', id: 63 },
@@ -37,12 +38,12 @@ export const SEED_USERFIELD_VALUES: Record<string, Array<{ label: string; id: nu
     { label: 'ADIPEC 2026', id: 69 },
   ],
   UF_CRM_PRODUCT_INTEREST: [
-    { label: 'Platform/Core', id: 71 },
+    { label: 'Platform / Core', id: 71 },
     { label: 'Analytics', id: 73 },
     { label: 'Integration Services', id: 75 },
     { label: 'Support & SLA', id: 77 },
     { label: 'Training', id: 79 },
-    { label: 'OEM/White label', id: 81 },
+    { label: 'OEM / White label', id: 81 },
   ],
   UF_CRM_PRIORITY: [
     { label: 'High', id: 83 },
