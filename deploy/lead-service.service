@@ -1,0 +1,33 @@
+# systemd unit for running the poller directly on a Linux VPS (no Docker).
+#
+#   sudo cp deploy/lead-service.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now lead-service
+#   journalctl -u lead-service -f
+#
+# Requires Node 24+ (node:sqlite) and the repo checked out at WorkingDirectory,
+# with a .env file present there (mode 600, owned by the service user).
+
+[Unit]
+Description=Trade-show lead service (Teams -> Bitrix24)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=leadsvc
+WorkingDirectory=/opt/lead-service
+ExecStart=/usr/bin/npx tsx scripts/poll-teams.ts --watch
+Restart=always
+RestartSec=15
+# Secrets live in the env file, not in this unit.
+EnvironmentFile=/opt/lead-service/.env
+
+# Hardening: the service only needs to write its own data directory.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/lead-service/data /opt/lead-service/logs
+
+[Install]
+WantedBy=multi-user.target

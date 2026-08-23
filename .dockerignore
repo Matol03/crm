@@ -1,0 +1,13 @@
+# Secrets must never enter an image layer — supplied at runtime instead.
+.env
+.env.local
+*.env
+
+node_modules/
+data/
+logs/
+dist/
+.git/
+.gitignore
+*.sqlite
+*.sqlite-*
