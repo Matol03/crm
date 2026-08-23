@@ -32,7 +32,25 @@ restart loses the watermark and the processed-message record.
 On a managed platform (Railway/Render/Fly), set the same variables as
 dashboard secrets and attach a persistent volume mounted at `/app/data`.
 
-## Option B — Linux VPS, no Docker
+## Option B — Linux VPS, no Docker (scripted)
+
+`deploy/bootstrap.sh` provisions a fresh Ubuntu 22.04/24.04 host end to end
+(Node 24, service user, app install, dependencies, systemd unit) and is safe to
+re-run to upgrade. Since the repo has no git remote yet, ship the code with
+rsync:
+
+```bash
+rsync -av --exclude node_modules --exclude data --exclude logs --exclude .git \
+      ./ root@HOST:/tmp/lead-service/
+ssh root@HOST 'bash /tmp/lead-service/deploy/bootstrap.sh'
+
+# Secrets travel separately, never through the world-readable /tmp copy:
+scp .env root@HOST:/opt/lead-service/.env
+ssh root@HOST 'chmod 600 /opt/lead-service/.env && chown leadsvc /opt/lead-service/.env'
+ssh root@HOST 'systemctl start lead-service && journalctl -u lead-service -f'
+```
+
+## Option B2 — Linux VPS, manual
 
 ```bash
 sudo useradd -r -s /usr/sbin/nologin leadsvc
