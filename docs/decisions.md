@@ -4,6 +4,34 @@ Living record of the calls made while building the trade-show lead service,
 including anything that diverged from `PRD-lead-service-FINAL-for-Claude-Code.md`
 and why. Newest decisions first within each section.
 
+## Microsoft Graph: app-only auth confirmed; two permission gaps
+
+App-only (client-credentials) auth **works** against the tenant. Token `roles`
+claim shows these application permissions admin-consented:
+`ChannelMessage.Read.All`, `Channel.ReadBasic.All`, `Team.ReadBasic.All`,
+`Group.Read.All`, `User.Read.All`. This is the PRD's preferred path (S4) — no
+delegated fallback needed for reading messages.
+
+Verified live (read-only): team **Kazdream Test WorkSpace**
+(`53342a10-eace-4026-92bf-a2fd451a47e9`) with 5 channels; channel messages list
+successfully, including a real user message carrying a PNG attachment.
+
+**Gap 1 — attachment bytes are NOT downloadable.** No `Files.Read.All` /
+`Sites.Read.All` is granted. `/shares/u!<url>/driveItem` and the channel's own
+`/drives/{driveId}/root` both return **403 accessDenied** (the channel's
+`filesFolder` metadata *is* readable, so this is specifically a file-content
+permission wall). Consequence: card photos and voice clips cannot be fetched, so
+real OCR/ASR cannot run on live Teams messages. Text-only messages work fully.
+
+**Gap 2 — replies cannot be posted app-only.** `ChannelMessage.Send` is not
+granted (and Microsoft restricts app-only posting to protected APIs / RSC).
+Consequence: the manager-feedback step (S11) cannot post to the real channel.
+
+Both are tenant-configuration issues, not code. The ingestion adapter is built so
+that granting the permissions later requires no pipeline change. Interim posture:
+ingest real text messages; attachments are flagged `attachmentPending` (the
+existing S4/S10.4 path) rather than failing the lead.
+
 ## Provider decision: Gemini (free) is the live LLM + OCR; DeepSeek is the alternate
 
 DeepSeek has no free tier and the account has zero balance (402 on all
