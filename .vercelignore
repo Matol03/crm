@@ -1,0 +1,27 @@
+# Vercel does NOT read .gitignore when uploading from the CLI, so everything
+# sensitive must be listed again here. Without this, `vercel deploy` uploads the
+# real .env and the live SQLite database to Vercel's servers.
+
+# Secrets
+.env
+.env.local
+*.env
+
+# Runtime state: the lead database contains real contact data (PII)
+data/
+*.sqlite
+*.sqlite-*
+logs/
+
+node_modules/
+.git/
+
+# Nothing outside web/ is served — the console is a static site. The server,
+# tests and scripts are kept out of the upload entirely.
+server/
+scripts/
+fixtures/
+deploy/
+docs/
+Dockerfile
+docker-compose.yml

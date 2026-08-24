@@ -33,3 +33,5 @@ logs/
 # Scratch/diagnostic scripts
 _*.sh
 _*.ts
+
+.vercel
