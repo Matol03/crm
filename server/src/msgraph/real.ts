@@ -7,11 +7,13 @@
  *
  * Tenant permission reality (verified live, see docs/decisions.md):
  *   - ChannelMessage.Read.All IS granted -> message polling works.
- *   - Files.Read.All / Sites.Read.All are NOT granted -> attachment bytes 403.
- *     Attachments are therefore emitted with `attachmentPending: true` instead of
- *     failing; the lead is still created and flagged for retry (S4 / S10.4).
- *     The download path is implemented, so granting the permission later needs
- *     no code change.
+ *   - Inline images (the usual way a phone posts a photo) are message
+ *     *hostedContents*, readable with ChannelMessage.Read.All alone — verified
+ *     live. These are downloaded and OCR'd today, no extra permission needed.
+ *   - File attachments live in the channel's SharePoint library and DO need
+ *     Files.Read.All / Sites.Read.All, which are not granted; those are emitted
+ *     with `attachmentPending: true` so the lead is still created and flagged
+ *     for retry (S4 / S10.4). The download path is implemented either way.
  *   - ChannelMessage.Send is NOT granted -> postReply degrades to a logged
  *     warning rather than throwing, so a lead is never lost over a reply.
  *
@@ -19,7 +21,7 @@
  */
 
 import type { MsGraphClient, RawChannelMessage } from '../contracts/adapters.js';
-import type { SessionItem, ItemType } from '../contracts/session.js';
+import type { SessionItem, ItemType, AttachmentRef } from '../contracts/session.js';
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 
@@ -58,6 +60,14 @@ interface GraphMessage {
   replyToId?: string | null;
 }
 
+/** Inline images appear in the body as <img src=".../hostedContents/{id}/$value">. */
+const HOSTED_RE = /hostedContents\/([^/"']+)\//g;
+
+/** Ids of every inline image carried by a message body. */
+export function hostedContentIds(html: string): string[] {
+  return [...new Set([...String(html || '').matchAll(HOSTED_RE)].map((m) => m[1]!))];
+}
+
 const IMAGE_EXT = /\.(png|jpe?g|gif|bmp|webp|heic|tiff?)$/i;
 const VOICE_EXT = /\.(ogg|oga|opus|mp3|m4a|wav|amr|aac|wma|webm)$/i;
 
@@ -85,6 +95,12 @@ export function classifyAttachment(a: GraphAttachment): ItemType | null {
   if (IMAGE_EXT.test(name) || /^image\//i.test(ct)) return 'image';
   if (VOICE_EXT.test(name) || /^audio\//i.test(ct)) return 'voice';
   return null;
+}
+
+/** Graph's sharing-URL encoding: base64url of the absolute URL, prefixed `u!`. */
+function encodeShareUrl(url: string): string {
+  const b64 = Buffer.from(url, 'utf8').toString('base64');
+  return 'u!' + b64.replace(/=+$/, '').replace(/\//g, '_').replace(/\+/g, '-');
 }
 
 export class RealMsGraphClient implements MsGraphClient {
@@ -170,6 +186,19 @@ export class RealMsGraphClient implements MsGraphClient {
     const items: SessionItem[] = [];
     if (text) items.push({ messageId: m.id, timestamp, type: 'text', text });
 
+    // Inline images: readable now, so they become real image items with a
+    // reference the pipeline can resolve to bytes (previously these were
+    // silently dropped, because stripping the <img> tag left no content).
+    for (const [idx, contentId] of hostedContentIds(m.body?.content ?? '').entries()) {
+      items.push({
+        messageId: `${m.id}:img${idx}`,
+        timestamp,
+        type: 'image',
+        ocrText: null,
+        attachmentRef: { kind: 'hosted', messageId: m.id, contentId },
+      });
+    }
+
     for (const [idx, a] of (m.attachments ?? []).entries()) {
       const kind = classifyAttachment(a);
       if (!kind) continue;
@@ -182,7 +211,10 @@ export class RealMsGraphClient implements MsGraphClient {
         // rather than failing. Granting the permission later fills these in.
         attachmentPending: true,
       };
-      if (a.contentUrl) item.mediaUrl = a.contentUrl;
+      if (a.contentUrl) {
+        item.mediaUrl = a.contentUrl;
+        item.attachmentRef = { kind: 'sharepoint', url: a.contentUrl };
+      }
       if (kind === 'image') item.ocrText = null;
       items.push(item);
       this.warn('attachment_bytes_unavailable', kind);
@@ -198,6 +230,33 @@ export class RealMsGraphClient implements MsGraphClient {
       ...(m.replyToId ? { replyToId: m.replyToId } : {}),
       items,
     };
+  }
+
+  /**
+   * Download an attachment's bytes. Returns null (never throws) when the file
+   * cannot be read, so a permission gap degrades to a retry flag.
+   */
+  async fetchAttachment(ref: AttachmentRef): Promise<{ bytes: Uint8Array; mimeType: string } | null> {
+    try {
+      const token = await this.getToken();
+      const chan = encodeURIComponent(this.opts.channelId);
+      const url = ref.kind === 'hosted'
+        ? `${GRAPH}/teams/${this.opts.teamsGroupId}/channels/${chan}/messages/${ref.messageId}/hostedContents/${ref.contentId}/$value`
+        // SharePoint file: address it through the /shares endpoint.
+        : `${GRAPH}/shares/${encodeShareUrl(ref.url)}/driveItem/content`;
+
+      const res = await this.doFetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) {
+        this.warn('attachment_fetch_failed', `${ref.kind} http ${res.status}`);
+        return null;
+      }
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      if (!bytes.length) return null;
+      return { bytes, mimeType: res.headers.get('content-type') || 'application/octet-stream' };
+    } catch {
+      this.warn('attachment_fetch_failed', 'network');
+      return null;
+    }
   }
 
   async getNewChannelMessages(since: string): Promise<RawChannelMessage[]> {

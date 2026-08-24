@@ -7,7 +7,7 @@
  * without touching grouping/extraction/mapping.
  */
 
-import type { SessionItem } from './session.js';
+import type { SessionItem, AttachmentRef } from './session.js';
 import type { RawExtraction } from './extraction.js';
 import type { SegmentationResult } from './segmentation.js';
 
@@ -25,6 +25,11 @@ export interface RawChannelMessage {
 /** Ingestion: get new channel messages since a watermark (PRD Section 4). */
 export interface MsGraphClient {
   getNewChannelMessages(since: string): Promise<RawChannelMessage[]>;
+  /**
+   * Download an attachment's bytes. Returns null when the file is not (yet)
+   * retrievable — the caller then flags the lead for retry rather than failing.
+   */
+  fetchAttachment(ref: AttachmentRef): Promise<{ bytes: Uint8Array; mimeType: string } | null>;
   /** Post the manager reply back into the Teams thread (PRD Section 11). */
   postReply(
     channel: { teamsGroupId: string; channelId: string },

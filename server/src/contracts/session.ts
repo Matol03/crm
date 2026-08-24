@@ -31,7 +31,25 @@ export interface SessionItem {
    * (PRD Section 4 / 10.4).
    */
   attachmentPending?: boolean;
+  /**
+   * How to fetch this attachment's bytes later. Kept as a reference rather than
+   * inlining the bytes so the session bundle (which is persisted as JSON) stays
+   * small; the pipeline resolves it only when it actually needs to read the file.
+   */
+  attachmentRef?: AttachmentRef;
 }
+
+/**
+ * Where an attachment's bytes live.
+ *
+ * `hosted` — inline image carried by the message itself. Readable with only
+ *   ChannelMessage.Read.All, so this path works without file permissions.
+ * `sharepoint` — a file attachment stored in the channel's document library.
+ *   Needs Files.Read.All / Sites.Read.All.
+ */
+export type AttachmentRef =
+  | { kind: 'hosted'; messageId: string; contentId: string }
+  | { kind: 'sharepoint'; url: string };
 
 export interface SessionChannel {
   teamsGroupId: string;

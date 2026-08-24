@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { RealMsGraphClient, htmlToText, classifyAttachment } from '../src/msgraph/real.js';
+import { RealMsGraphClient, htmlToText, classifyAttachment, hostedContentIds } from '../src/msgraph/real.js';
 
 const TEAM = 'team-1';
 const CHAN = '19:abc@thread.tacv2';
@@ -10,6 +10,7 @@ function stubFetch(routes: {
   replies?: Record<string, unknown[]>;
   user?: { mail?: string; userPrincipalName?: string };
   postStatus?: number;
+  hostedStatus?: number;
 }): { fetchImpl: typeof fetch; posts: string[] } {
   const posts: string[] = [];
   const fetchImpl = (async (url: string | URL, init?: RequestInit) => {
@@ -25,6 +26,14 @@ function stubFetch(routes: {
     if (u.includes('/replies')) {
       const id = u.match(/messages\/([^/]+)\/replies/)?.[1] ?? '';
       return ok({ value: routes.replies?.[id] ?? [] });
+    }
+    if (u.includes('/hostedContents/') && u.endsWith('/$value')) {
+      if (routes.hostedStatus && routes.hostedStatus !== 200) return ok({}, routes.hostedStatus);
+      return {
+        ok: true, status: 200,
+        headers: { get: (k: string) => (k.toLowerCase() === 'content-type' ? 'image/png' : null) },
+        arrayBuffer: async () => new Uint8Array([137, 80, 78, 71]).buffer,
+      } as unknown as Response;
     }
     if (u.includes('/messages')) return ok({ value: routes.messages ?? [] });
     if (u.includes('/users/')) return ok(routes.user ?? { mail: 'ivan@example.com' });
@@ -131,6 +140,48 @@ describe('RealMsGraphClient.getNewChannelMessages', () => {
     const out = await c.getNewChannelMessages('2020-01-01T00:00:00Z');
     expect(out).toHaveLength(2);
     expect(out[1]!.replyToId).toBe('m1');
+  });
+});
+
+describe('inline images (hostedContents)', () => {
+  const inlineMsg = {
+    id: 'm9',
+    messageType: 'message',
+    lastModifiedDateTime: '2026-08-23T10:00:00Z',
+    body: { content: '<p>card</p><img src="https://graph.microsoft.com/v1.0/teams/t/channels/c/messages/m9/hostedContents/abc123/$value">', contentType: 'html' },
+    from: { user: { id: 'u1', displayName: 'Ivan' } },
+  };
+
+  it('extracts hosted content ids from a message body', () => {
+    expect(hostedContentIds(inlineMsg.body.content)).toEqual(['abc123']);
+    expect(hostedContentIds('<p>no image</p>')).toEqual([]);
+  });
+
+  it('emits an image item for an inline image (previously dropped)', async () => {
+    const { c } = client({ messages: [inlineMsg] });
+    const out = await c.getNewChannelMessages('2020-01-01T00:00:00Z');
+    const img = out[0]!.items.find((i) => i.type === 'image')!;
+    expect(img).toBeDefined();
+    expect(img.messageId).toBe('m9:img0');
+    expect(img.attachmentRef).toEqual({ kind: 'hosted', messageId: 'm9', contentId: 'abc123' });
+    // The text part of the same message survives alongside it.
+    expect(out[0]!.items.some((i) => i.type === 'text')).toBe(true);
+  });
+
+  it('downloads inline image bytes with only ChannelMessage.Read.All', async () => {
+    const { c } = client({ messages: [inlineMsg] });
+    const file = await c.fetchAttachment({ kind: 'hosted', messageId: 'm9', contentId: 'abc123' });
+    expect(file).not.toBeNull();
+    expect(file!.bytes.length).toBe(4);
+    expect(file!.mimeType).toBe('image/png');
+  });
+
+  it('returns null and warns when the attachment cannot be read', async () => {
+    const warns: string[] = [];
+    const { c } = client({ messages: [inlineMsg], hostedStatus: 403 }, (e) => warns.push(e.code));
+    const file = await c.fetchAttachment({ kind: 'hosted', messageId: 'm9', contentId: 'abc123' });
+    expect(file).toBeNull();
+    expect(warns).toContain('attachment_fetch_failed');
   });
 });
 

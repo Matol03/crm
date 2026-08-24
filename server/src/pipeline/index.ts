@@ -238,12 +238,22 @@ export class Pipeline {
           ...(item.mediaUrl !== undefined ? { mediaUrl: item.mediaUrl } : {}),
         });
         out.push({ ...item, transcript });
-      } else if (item.type === 'image' && item.ocrText == null && item.attachmentPending !== true) {
+      } else if (item.type === 'image' && item.ocrText == null) {
+        // Fetch the bytes only now, when they are actually needed for OCR.
+        const file = item.attachmentRef
+          ? await this.deps.graph.fetchAttachment(item.attachmentRef)
+          : null;
+        if (!file && item.attachmentRef) {
+          // Not retrievable (e.g. a permission gap) — keep the lead, flag it.
+          out.push({ ...item, attachmentPending: true });
+          continue;
+        }
         const ocrText = await this.deps.ocr.readCard({
+          ...(file ? { bytes: file.bytes, mimeType: file.mimeType } : {}),
           ...(item.mediaUrl !== undefined ? { mediaUrl: item.mediaUrl } : {}),
           ocrText: item.ocrText ?? null,
         });
-        out.push({ ...item, ocrText });
+        out.push({ ...item, ocrText, attachmentPending: ocrText == null && !!item.attachmentRef });
       } else {
         out.push(item);
       }
