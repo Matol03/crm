@@ -235,6 +235,12 @@ export class Db {
 
   // ── employee_map (PRD Section 10.5) ────────────────────────
 
+  /**
+   * Store a mapping. Emails are normalised to lower case because Graph reports
+   * the address in whatever case the directory holds it ("M.Askarov@Contoso...")
+   * while SQLite compares TEXT case-sensitively — matching on the raw value
+   * would silently miss and send every lead to the default owner.
+   */
   setEmployee(teamsEmail: string, bitrixUserId: number, displayName: string): void {
     this.handle
       .prepare(
@@ -243,13 +249,14 @@ export class Db {
          ON CONFLICT(teams_email) DO UPDATE SET
            bitrix_user_id = excluded.bitrix_user_id, display_name = excluded.display_name`,
       )
-      .run(teamsEmail, bitrixUserId, displayName);
+      .run(teamsEmail.trim().toLowerCase(), bitrixUserId, displayName);
   }
 
+  /** Look up an owner. Case-insensitive, for the reason above. */
   getBitrixUserId(teamsEmail: string): number | null {
     const row = this.handle
       .prepare('SELECT bitrix_user_id FROM employee_map WHERE teams_email = ?')
-      .get(teamsEmail) as { bitrix_user_id: number } | undefined;
+      .get(teamsEmail.trim().toLowerCase()) as { bitrix_user_id: number } | undefined;
     return row?.bitrix_user_id ?? null;
   }
 

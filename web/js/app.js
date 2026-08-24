@@ -29,6 +29,8 @@ function page(loader, { admin = false } = {}) {
     try {
       const render = await loader();
       await render(main, route);
+      // A screen may have fallen back to sample data while rendering.
+      renderConnection();
     } catch (err) {
       // Never surface a stack trace to an operator (PRD §14).
       console.error(err);
@@ -57,6 +59,7 @@ register('leads', page(async () => {
 register('unresolved', page(async () => (await import('./pages/unresolved.js')).renderUnresolved));
 register('duplicates', page(async () => (await import('./pages/duplicates.js')).renderDuplicates));
 register('analytics',  page(async () => (await import('./pages/analytics.js')).renderAnalytics));
+register('logs',       page(async () => (await import('./pages/logs.js')).renderLogs));
 
 register('campaign',     page(async () => (await import('./pages/admin/campaign.js')).renderCampaign, { admin: true }));
 register('channels',     page(async () => (await import('./pages/admin/channels.js')).renderChannels, { admin: true }));

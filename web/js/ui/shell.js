@@ -6,7 +6,7 @@
 import { h, icon, replace } from './dom.js';
 import { state, isAdmin, setRole, ADMIN_ROUTES } from '../state.js';
 import { current, navigate } from '../router.js';
-import { connection, getSecret, setSecret } from '../api.js';
+import { connection, dataSource, getSecret, setSecret } from '../api.js';
 import { openDrawer, toast } from './primitives.js';
 
 const MAIN_NAV = [
@@ -20,6 +20,7 @@ const MAIN_NAV = [
   { route: 'unresolved', label: 'Needs attention', icon: 'unresolved' },
   { route: 'duplicates', label: 'Duplicates', icon: 'duplicates' },
   { route: 'analytics',  label: 'Analytics',  icon: 'analytics' },
+  { route: 'logs',       label: 'Activity log', icon: 'clock' },
 ];
 
 const ADMIN_NAV = [
@@ -77,15 +78,40 @@ export function renderSidebar() {
 /** Connection pill — reflects whether live API data is flowing. */
 export function renderConnection() {
   if (!statusEl) return;
-  const live = connection.live;
+  const sampling = dataSource.mode === 'sample';
+  const live = connection.live && !sampling;
   replace(statusEl,
-    h(`span.badge.badge-${live ? 'ok' : 'neutral'}`,
+    h(`span.badge.badge-${live ? 'ok' : sampling ? 'warn' : 'neutral'}`,
       h('span.dot' + (live ? '.live' : '')),
-      live ? 'Live data' : 'Not connected'),
+      live ? 'Live data' : sampling ? 'Sample data' : 'Not connected'),
   );
   statusEl.title = live
     ? 'Reading live data from Bitrix24 through the lead service'
-    : `Not reading data — ${connection.reason || 'no API secret set'}`;
+    : sampling
+      ? `Showing fallback sample data — ${dataSource.reason}`
+      : `Not reading data — ${connection.reason || 'no API secret set'}`;
+  renderSampleBanner();
+}
+
+/**
+ * A persistent strip above the content whenever the screen is showing fallback
+ * data. The pill alone is too easy to miss, and sample figures must never be
+ * mistaken for the real pipeline.
+ */
+function renderSampleBanner() {
+  const host = document.querySelector('.main-inner');
+  if (!host) return;
+  const existing = host.previousElementSibling?.classList?.contains('sample-strip')
+    ? host.previousElementSibling : null;
+  if (dataSource.mode !== 'sample') { existing?.remove(); return; }
+  if (existing) return;
+  const strip = h('div.banner.banner-warn.sample-strip', { style: { margin: '0 0 var(--sp-5)' } },
+    icon('alert', 15),
+    h('div.grow',
+      h('div.fw-medium', 'Showing sample data'),
+      h('div.t-xs', { style: { marginTop: '2px' } },
+        `${dataSource.reason} Nothing on this screen reflects your real leads.`)));
+  host.parentElement?.insertBefore(strip, host);
 }
 
 /** Prompt for the API secret so the UI can switch to live data. */

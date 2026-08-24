@@ -50,6 +50,16 @@ describe('employee_map + campaign + list cache', () => {
     db.close();
   });
 
+  it('matches the author email regardless of case', () => {
+    // Graph reports directory casing ("M.Askarov@Contoso..."), so an exact
+    // match would miss and every lead would fall to the default owner.
+    const db = freshDb();
+    db.setEmployee('M.Askarov@Contoso.OnMicrosoft.com', 21, 'Murat');
+    expect(db.getBitrixUserId('m.askarov@contoso.onmicrosoft.com')).toBe(21);
+    expect(db.getBitrixUserId('M.ASKAROV@CONTOSO.ONMICROSOFT.COM')).toBe(21);
+    db.close();
+  });
+
   it('caches and reads list values', () => {
     const db = freshDb();
     db.cacheListValues('UF_CRM_PRIORITY', [{ label: 'High', id: 83 }]);

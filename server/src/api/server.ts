@@ -82,6 +82,68 @@ function serveStatic(res: ServerResponse, pathname: string): boolean {
   return true;
 }
 
+/**
+ * Parse the poller's log into structured entries.
+ *
+ * The log is plain console output, so this reads the shapes the poller emits
+ * rather than pretending to be a log framework: polls, sessions, per-lead
+ * results, warnings and errors. Unrecognised lines are kept as plain text so
+ * nothing is silently hidden.
+ */
+function readServiceLog(limit = 200): Array<Record<string, unknown>> {
+  const file = resolve(WEB_ROOT, '../logs/service.log');
+  let text: string;
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch {
+    return [];
+  }
+  // Only the tail is interesting, and the file grows unbounded.
+  const lines = text.split('\n').map((l) => l.replace(/\r$/, '')).filter(Boolean).slice(-limit * 3);
+  const out: Array<Record<string, unknown>> = [];
+
+  for (const line of lines) {
+    const t = line.trim();
+    if (!t) continue;
+
+    // Structured warnings are emitted as JSON by the Graph client.
+    if (t.startsWith('{') && t.includes('"level"')) {
+      try {
+        const j = JSON.parse(t) as Record<string, unknown>;
+        out.push({ kind: 'warn', level: j.level, source: j.src, code: j.code, detail: j.detail, text: t });
+        continue;
+      } catch { /* fall through to plain text */ }
+    }
+    if (t.startsWith('Config:')) continue;            // noisy, and already on Diagnostics
+
+    let m: RegExpMatchArray | null;
+    if ((m = t.match(/^\[poll\] (\d+) new message/))) {
+      out.push({ kind: 'poll', count: Number(m[1]), text: t });
+    } else if ((m = t.match(/^(\S+Z) (.+) \[([a-z,]+)\]$/))) {
+      out.push({ kind: 'message', ts: m[1], author: m[2], types: m[3]!.split(','), text: t });
+    } else if ((m = t.match(/^\[session\] (\S+) — (\d+) item/))) {
+      out.push({ kind: 'session', author: m[1], items: Number(m[2]), text: t });
+    } else if ((m = t.match(/^status=(\w+) leads=(\d+)/))) {
+      out.push({ kind: 'result', status: m[1], leads: Number(m[2]), text: t });
+    } else if ((m = t.match(/^• (.+?) -> (\S+)/))) {
+      out.push({ kind: 'lead', title: m[1], url: m[2], text: t });
+    } else if (t.startsWith('warnings:')) {
+      out.push({ kind: 'warn', detail: t.replace(/^warnings:\s*/, ''), text: t });
+    } else if (t.startsWith('error:') || t.startsWith('POLL FAILED')) {
+      out.push({ kind: 'error', detail: t.replace(/^error:\s*/, ''), text: t });
+    } else if (t.startsWith('[quota]')) {
+      out.push({ kind: 'quota', text: t });
+    } else if (t.startsWith('[watermark]')) {
+      out.push({ kind: 'watermark', text: t });
+    } else if (t.startsWith('reply:')) {
+      out.push({ kind: 'reply', text: t.replace(/^reply:\s*/, '') });
+    } else if (t.startsWith('[') || t.startsWith('Bitrix mode') || t.startsWith('Polling since')) {
+      out.push({ kind: 'info', text: t });
+    }
+  }
+  return out.slice(-limit).reverse();   // newest first
+}
+
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body);
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
@@ -215,6 +277,13 @@ export function createApiServer(app: ApiApp, config: ApiServerConfig): Server {
       sendJson(res, 200, await r.needsAttention());
       return;
     }
+    // Recent service activity, parsed from the poller's log file.
+    // Admin-facing: it names leads, which the operator can already see.
+    if (method === 'GET' && path === '/api/logs') {
+      sendJson(res, 200, { entries: readServiceLog(Number(url.searchParams.get('limit') ?? 200)) });
+      return;
+    }
+
     // Operational state for the admin screens. Secrets are never included —
     // only whether a credential is configured.
     if (method === 'GET' && path === '/api/system') {

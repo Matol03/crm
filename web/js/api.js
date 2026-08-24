@@ -12,7 +12,15 @@
  * screens say so rather than showing invented numbers.
  */
 
+import * as sample from './sample.js';
+
 const SECRET_KEY = 'leadservice.apiSecret';
+
+/**
+ * Whether the last read came from the live service or the fallback fixtures.
+ * The shell surfaces this, so sample data is never mistaken for real data.
+ */
+export const dataSource = { mode: 'live', reason: '' };
 
 export const getSecret = () => sessionStorage.getItem(SECRET_KEY) || '';
 export const setSecret = (v) => {
@@ -173,12 +181,35 @@ function shapeLead(l) {
 
 /* ── Reads ──────────────────────────────────────────────────────────────── */
 
+/**
+ * Try the live service; fall back to fixtures if it cannot be reached.
+ *
+ * The caller gets usable data either way — a dropped connection shows a working
+ * interface rather than an error wall — but `dataSource` flips to 'sample' so
+ * the UI can say plainly that this is not real data.
+ */
+async function callOrSample(path, fallback) {
+  try {
+    const data = await call(path);
+    dataSource.mode = 'live';
+    dataSource.reason = '';
+    return data;
+  } catch (err) {
+    dataSource.mode = 'sample';
+    dataSource.reason = err?.message || 'The live service could not be reached.';
+    return typeof fallback === 'function' ? fallback() : fallback;
+  }
+}
+
 export async function getLeads() {
-  return (await call('/api/crm/leads')).map(shapeLead);
+  return (await callOrSample('/api/crm/leads', sample.LEADS)).map(shapeLead);
 }
 
 export async function getLead(bitrixId) {
-  const l = await call(`/api/crm/leads/${encodeURIComponent(bitrixId)}`);
+  const l = await callOrSample(
+    `/api/crm/leads/${encodeURIComponent(bitrixId)}`,
+    () => ({ ...sample.LEAD_DETAIL, bitrixLeadId: Number(bitrixId) || sample.LEAD_DETAIL.bitrixLeadId }),
+  );
   const msgs = (l.sourceMessages || []).map((m, i) => ({
     id: m.messageId || `m-${i}`,
     ts: m.timestamp,
@@ -231,11 +262,16 @@ function buildJournal(l, msgs) {
   return entries;
 }
 
-export async function getAnalytics() { return call('/api/crm/analytics'); }
-export async function getDuplicates() { return call('/api/crm/duplicates'); }
-export async function getAttention() { return call('/api/crm/attention'); }
-export async function getReference() { return call('/api/crm/reference'); }
-export async function getSystem()    { return call('/api/system'); }
+export async function getAnalytics()  { return callOrSample('/api/crm/analytics', sample.ANALYTICS); }
+export async function getDuplicates() { return callOrSample('/api/crm/duplicates', sample.DUPLICATES); }
+export async function getAttention()  { return callOrSample('/api/crm/attention', sample.ATTENTION); }
+export async function getReference()  { return callOrSample('/api/crm/reference', sample.REFERENCE); }
+export async function getSystem()     { return callOrSample('/api/system', sample.SYSTEM); }
+
+/** Recent service activity, newest first. */
+export async function getLogs(limit = 200) {
+  return callOrSample(`/api/logs?limit=${limit}`, sample.LOGS);
+}
 
 /** Dashboard figures, derived from the portal's own leads. */
 export async function getDashboard() {
