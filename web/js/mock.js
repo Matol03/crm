@@ -40,10 +40,10 @@ export const CAMPAIGN = {
 };
 
 const MANAGERS = [
-  { name: 'Murat Askarov', email: 'm.askarov@kdtestspace.onmicrosoft.com', bitrixUserId: 21 },
+  { name: 'Murat Askarov', email: 'murat.askarov@example.com', bitrixUserId: 21 },
   { name: 'Ivan Petrov', email: 'ivan.petrov@example.com', bitrixUserId: 7 },
   { name: 'Olga Kim', email: 'olga.kim@example.com', bitrixUserId: 9 },
-  { name: 'Zhalgas Askarov', email: 'zh.askarov@kdtestspace.onmicrosoft.com', bitrixUserId: 14 },
+  { name: 'Zhalgas Askarov', email: 'zhalgas.askarov@example.com', bitrixUserId: 14 },
 ];
 
 const COMPANIES = [

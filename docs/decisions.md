@@ -98,7 +98,7 @@ claim shows these application permissions admin-consented:
 delegated fallback needed for reading messages.
 
 Verified live (read-only): team **Kazdream Test WorkSpace**
-(`53342a10-eace-4026-92bf-a2fd451a47e9`) with 5 channels; channel messages list
+(team id redacted) with 5 channels; channel messages list
 successfully, including a real user message carrying a PNG attachment.
 
 **Gap 1 — attachment bytes are NOT downloadable.** No `Files.Read.All` /
