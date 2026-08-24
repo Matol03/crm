@@ -138,9 +138,11 @@ function normaliseConfidence(conf) {
     productInterest: conf.productInterest, priority: conf.priority,
   };
   for (const k of Object.keys(fields)) if (typeof fields[k] !== 'number') delete fields[k];
-  const values = Object.values(fields);
-  // Overall = mean of what was actually scored; null when nothing was.
-  const overall = values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
+  // A score of 0 means the model did not extract that field at all. Averaging
+  // those in would drag the headline number down for a lead that is perfectly
+  // confident about everything it *did* find, so only scored fields count.
+  const scored = Object.values(fields).filter((v) => v > 0);
+  const overall = scored.length ? scored.reduce((a, b) => a + b, 0) / scored.length : null;
   return { overall, fields };
 }
 

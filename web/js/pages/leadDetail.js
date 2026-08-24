@@ -196,9 +196,13 @@ export async function renderLeadDetail(root, id) {
             hasSource && !isEmpty && h('div.t-xs.subtle', { style: { marginTop: '2px', display: 'flex', gap: '5px', alignItems: 'center' } },
               icon(KIND[sourceKind(key)]?.icon || 'message', 11),
               sourceLabel(key))),
-          h('div', score == null
-            ? h('span.t-xs.faint', isDemo ? '—' : 'not recorded')
-            : confidence(score)),
+          // No value means there is nothing to be confident about — showing a
+          // 0% bar for an undetected field reads as a failure rather than a blank.
+          h('div', isEmpty
+            ? h('span.t-xs.faint', '—')
+            : score == null
+              ? h('span.t-xs.faint', isDemo ? '—' : 'not recorded')
+              : confidence(score)),
         );
       }),
     );
