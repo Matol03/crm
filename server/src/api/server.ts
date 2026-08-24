@@ -10,8 +10,8 @@
  */
 
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { readFileSync, statSync } from 'node:fs';
+import { dirname, resolve, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Db } from '../db/index.js';
 import type { Pipeline } from '../pipeline/index.js';
@@ -30,7 +30,49 @@ export interface ApiServerConfig {
   apiSharedSecret: string;
 }
 
-const WEB_INDEX = resolve(dirname(fileURLToPath(import.meta.url)), '../../../web/index.html');
+const WEB_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../web');
+const WEB_INDEX = resolve(WEB_ROOT, 'index.html');
+
+/** Content types for the static assets the operator UI is built from. */
+const MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.woff2': 'font/woff2',
+};
+
+/**
+ * Serve a file from web/. Returns false when there is nothing to serve so the
+ * caller can fall through to the API routes / 404.
+ *
+ * The resolved path is confined to WEB_ROOT, so a crafted URL such as
+ * `/../../.env` cannot escape the web directory.
+ */
+function serveStatic(res: ServerResponse, pathname: string): boolean {
+  const target = resolve(WEB_ROOT, '.' + pathname);
+  if (target !== WEB_ROOT && !target.startsWith(WEB_ROOT + sep)) return false;
+  let body: Buffer;
+  try {
+    const st = statSync(target);
+    if (!st.isFile()) return false;
+    body = readFileSync(target);
+  } catch {
+    return false;
+  }
+  const ext = extname(target).toLowerCase();
+  res.writeHead(200, {
+    'content-type': MIME[ext] ?? 'application/octet-stream',
+    // The UI is developed live; never let a stale module linger.
+    'cache-control': 'no-cache',
+  });
+  res.end(body);
+  return true;
+}
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body);
@@ -97,6 +139,11 @@ export function createApiServer(app: ApiApp, config: ApiServerConfig): Server {
       const html = readFileSync(WEB_INDEX, 'utf8');
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       res.end(html);
+      return;
+    }
+
+    // ── Static assets for the operator UI (unauthenticated, like `/`) ──
+    if (method === 'GET' && !path.startsWith('/api/') && serveStatic(res, path)) {
       return;
     }
 

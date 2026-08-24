@@ -1,0 +1,6 @@
+echo "--- WSL proxy env ---"
+env | grep -iE "proxy" || echo "(no proxy env vars)"
+echo "--- WSL node fetch (outside container) ---"
+node -e 'fetch("https://graph.microsoft.com/").then(r=>console.log("wsl node fetch:",r.status)).catch(e=>console.log("wsl node FAIL:",(e.cause&&e.cause.code)||e.message))' 2>/dev/null || echo "(node not installed in WSL)"
+echo "--- WSL curl to gemini ---"
+curl -s -o /dev/null -w "wsl->gemini: %{http_code}\n" --max-time 10 https://generativelanguage.googleapis.com/ || echo "fail"

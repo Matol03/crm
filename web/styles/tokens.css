@@ -1,0 +1,85 @@
+/* ============================================================================
+   Design tokens — the single source of truth for colour, type, space, motion.
+   Every component reads from these; no component hard-codes a raw value.
+   ========================================================================= */
+
+:root {
+  /* ── Neutrals: surfaces and text ─────────────────────────────────────── */
+  --c-bg:            #f7f8fa;   /* app background behind panels            */
+  --c-surface:       #ffffff;   /* cards, tables, panels                   */
+  --c-surface-sunken:#f2f4f7;   /* inset areas, code, evidence blocks      */
+  --c-surface-hover: #f7f8fa;
+  --c-border:        #e4e7ec;   /* default hairline                        */
+  --c-border-strong: #d0d5dd;   /* inputs, emphasised dividers             */
+
+  --c-text:          #101828;   /* primary                                 */
+  --c-text-muted:    #475467;   /* secondary                               */
+  --c-text-subtle:   #667085;   /* tertiary / captions                     */
+  --c-text-faint:    #98a2b3;   /* placeholder, disabled                   */
+
+  /* ── Accent ──────────────────────────────────────────────────────────── */
+  --c-accent:        #4f46e5;
+  --c-accent-hover:  #4338ca;
+  --c-accent-soft:   #eef2ff;
+  --c-accent-border: #c7d2fe;
+  --c-accent-text:   #3730a3;
+
+  /* ── Status palette. Each status gets fg / bg / border so badges,
+        dots and bars stay consistent wherever they appear. ────────────── */
+  --c-ok:            #067647;  --c-ok-bg:        #ecfdf3;  --c-ok-border:      #abefc6;
+  --c-warn:          #b54708;  --c-warn-bg:      #fffaeb;  --c-warn-border:    #fedf89;
+  --c-danger:        #b42318;  --c-danger-bg:    #fef3f2;  --c-danger-border:  #fecdca;
+  --c-info:          #175cd3;  --c-info-bg:      #eff8ff;  --c-info-border:    #b2ddff;
+  --c-purple:        #6941c6;  --c-purple-bg:    #f4f3ff;  --c-purple-border:  #d9d6fe;
+  --c-neutral:       #475467;  --c-neutral-bg:   #f2f4f7;  --c-neutral-border: #e4e7ec;
+
+  /* ── Confidence scale (drives bars, rings and field flags) ───────────── */
+  --c-conf-high:     #12b76a;   /* >= 90 */
+  --c-conf-good:     #669f2a;   /* 75-89 */
+  --c-conf-mid:      #f79009;   /* 60-74 */
+  --c-conf-low:      #f04438;   /* < 60  */
+
+  /* ── Typography ──────────────────────────────────────────────────────── */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+               Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+               "Liberation Mono", monospace;
+
+  --fs-2xs:   11px;
+  --fs-xs:    12px;
+  --fs-sm:    13px;
+  --fs-base:  14px;
+  --fs-md:    15px;
+  --fs-lg:    18px;
+  --fs-xl:    22px;
+  --fs-2xl:   28px;
+  --fs-3xl:   34px;
+
+  --fw-normal:   400;
+  --fw-medium:   500;
+  --fw-semibold: 600;
+
+  --lh-tight: 1.25;
+  --lh-base:  1.5;
+
+  /* ── Space (4px rhythm) ──────────────────────────────────────────────── */
+  --sp-1: 4px;   --sp-2: 8px;   --sp-3: 12px;  --sp-4: 16px;
+  --sp-5: 20px;  --sp-6: 24px;  --sp-8: 32px;  --sp-10: 40px;
+  --sp-12: 48px; --sp-16: 64px;
+
+  /* ── Radii — restrained; this is a data tool, not a consumer app ─────── */
+  --r-sm: 4px;  --r-md: 6px;  --r-lg: 8px;  --r-full: 999px;
+
+  /* ── Elevation — used sparingly (overlays only) ──────────────────────── */
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, .06);
+  --shadow-md: 0 4px 8px -2px rgba(16, 24, 40, .10), 0 2px 4px -2px rgba(16, 24, 40, .06);
+  --shadow-lg: 0 12px 16px -4px rgba(16, 24, 40, .08), 0 4px 6px -2px rgba(16, 24, 40, .03);
+
+  /* ── Layout ──────────────────────────────────────────────────────────── */
+  --sidebar-w: 232px;
+  --topbar-h:  56px;
+
+  /* ── Motion — short and functional; no decorative animation ──────────── */
+  --t-fast: 120ms ease;
+  --t-base: 180ms ease;
+}
