@@ -9,12 +9,12 @@ Built to `PRD-lead-service-FINAL-for-Claude-Code.md`. See
 [`docs/architecture.md`](docs/architecture.md) and
 [`docs/decisions.md`](docs/decisions.md).
 
-> **Status:** the pipeline runs **live end-to-end on Gemini** (free tier) for
-> segmentation, extraction, and card OCR, writing to **mock Bitrix** — verified on
-> real fixtures (`npm run live-demo`). Bitrix stays mock until its webhook gets the
-> CRM scope and go-live is approved. DeepSeek clients remain as an alternate
-> provider (account needs balance). Microsoft Graph ingestion and a real ASR
-> provider are still deferred (mocks in place).
+> **Status:** running **live end-to-end** — Microsoft Graph ingestion → Gemini
+> segmentation/extraction/OCR → real Bitrix24 leads, with an operations console
+> on top. Verified against a real Teams channel and a real portal.
+>
+> Still mocked: ASR (fixtures carry transcripts) and attachment bytes, both
+> pending tenant permissions — see *Known limits* below.
 
 ## Requirements
 
@@ -53,17 +53,26 @@ The service polls the Teams channel continuously and writes leads to Bitrix24.
 npm run watch      # continuous poll (foreground); npm run poll for one shot
 ```
 
-For unattended operation a Windows scheduled task **LeadService** runs
-`scripts/run-service.cmd` at logon, restarts every 5 min if it stops, and logs to
-`logs/service.log`. All configuration comes from `.env` (currently
-`MSGRAPH_MODE=live`, `BITRIX_MODE=live`, `LLM_MODE=live`, `OCR_MODE=live`).
+For unattended operation two Windows scheduled tasks run at logon, each
+restarting every 5 minutes if it stops. Both read the same `.env` and the same
+SQLite database, so the console always shows what the poller just produced.
+
+| Task | Runs | Log |
+|---|---|---|
+| `LeadService` | `scripts/run-service.cmd` — the Teams → Bitrix24 poller | `logs/service.log` |
+| `LeadServiceUI` | `scripts/run-ui.cmd` — the operations console on `:4318` | `logs/ui.log` |
 
 ```powershell
-Start-ScheduledTask  -TaskName LeadService     # start now
-Stop-ScheduledTask   -TaskName LeadService     # stop
-Get-ScheduledTaskInfo -TaskName LeadService    # last run / result
-Get-Content .\logs\service.log -Tail 40 -Wait  # follow the log
+Get-ScheduledTask -TaskName LeadService,LeadServiceUI | Select TaskName,State
 ```
+
+```powershell
+Get-Content .\logs\service.log -Tail 40 -Wait
+```
+
+Use `Start-ScheduledTask` / `Stop-ScheduledTask` with either name to control them
+individually — stopping `LeadService` halts CRM writes while leaving the console
+readable.
 
 **Durability.** The poll watermark is persisted and is deliberately **not**
 advanced past a session that failed, so transient provider errors cause a retry
@@ -94,33 +103,47 @@ npm test          # vitest: unit + integration, incl. the idempotency suite
 npm run typecheck # tsc --noEmit (strict)
 ```
 
-## What works today (Stage 1)
+## What works
 
-- Deterministic per-author idle-timer buffering → `SessionBundle` (S4/S6).
-- LLM segmentation of a buffer into 1..N leads (heuristic mock; S6).
-- Extraction + confidence gating + deterministic validators + Partner/Customer
-  double-check (S8).
-- Reference-list mapping: exact → synonym → fuzzy → blank (S9).
-- Owner resolution (author → Bitrix user) with flagged default fallback (S10.5).
-- Batched writes through a mock Bitrix client with owner-scoped dedup (S10).
-- **Idempotency**: re-run ⇒ `noop`; crash-before-ledger ⇒ no duplicates;
-  overlapping backfill ⇒ only new messages (S10.4).
-- Manager reply on success/partial; silent on `noop` (S11).
+- **Ingestion** — app-only Microsoft Graph polling of a Teams channel, including
+  thread replies; author resolved to an email; system/bot messages skipped (S4).
+- **Grouping** — per-author idle-timer buffering (4 min idle, 15 min cap) then
+  LLM segmentation of the buffer into 1..N distinct contacts (S6).
+- **Extraction** — one call per segment for fields, Partner/Customer, and a
+  Russian summary; confidence gating plus deterministic validators, so a value is
+  written only when it is both confident *and* well-formed (S8).
+- **Provenance** — every written value is linked back to the exact source message
+  it was read from, resolved in code rather than asked of the model (S7).
+- **Mapping** — free text → Bitrix list IDs, exact → synonym → fuzzy → blank,
+  with IDs fetched live rather than hard-coded (S9).
+- **Owner** — lead assigned to the manager who posted, with a flagged fallback
+  when unmapped (S10.5).
+- **CRM writes** — batched, globally rate-limited at 2 req/s, per-sub-call
+  backoff, author-scoped dedup, and new leads forced to the `NEW` funnel status.
+- **Idempotency** — re-run ⇒ `noop`; crash before the ledger commit ⇒ no
+  duplicates; overlapping backfill ⇒ only genuinely new messages (S10.4).
+- **Operations console** — lead list/detail with confidence, evidence, source
+  timeline, duplicate and unresolved workspaces, analytics, and admin screens.
 
-## Deferred (behind adapters, not yet wired to real systems)
+## Known limits
 
-- Microsoft Graph ingestion (auth path + creds).
-- ASR provider (fixtures carry transcripts today).
-- Real OCR vision step (DeepSeek has no vision — see `docs/decisions.md` D1).
-- Live Bitrix writes (`BITRIX_MODE=mock` until explicitly approved).
+- **Attachment bytes** need `Files.Read.All`; until granted, card photos and
+  voice clips are flagged `attachmentPending` and the lead is created anyway.
+- **Replies to Teams** need `ChannelMessage.Send`; until granted the reply is
+  logged rather than posted, and never fails the lead.
+- **ASR** is still fixture-backed — the adapter is in place for a real provider.
+- **LLM quota** — see the ceiling note above; this is the practical blocker to
+  running a full-size show.
 
 ## Layout
 
 ```
-server/src/   contracts, config, db, ingestion, grouping, extraction,
-              ocr, asr, mapping, identity, llm, msgraph, bitrix, pipeline
-server/test/  vitest suites
-scripts/      generate-fixtures.ts, run-fixture-batch.ts
+server/src/   contracts, config, db, ingestion, grouping, extraction, provenance,
+              ocr, asr, mapping, identity, llm, msgraph, bitrix, pipeline, api
+server/test/  vitest suites (120 tests)
+web/          operations console — vanilla ES modules, no build step
+scripts/      fixtures, metrics, benchmarks, poller, service launchers
 fixtures/     scenarios/*.json, ground-truth.json
-docs/         architecture.md, decisions.md
+deploy/       systemd unit + VPS bootstrap
+docs/         architecture.md, decisions.md, deployment.md
 ```
