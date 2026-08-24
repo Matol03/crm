@@ -29,3 +29,7 @@ Thumbs.db
 
 # Service logs
 logs/
+
+# Scratch/diagnostic scripts
+_*.sh
+_*.ts
