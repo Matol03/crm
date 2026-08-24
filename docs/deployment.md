@@ -18,6 +18,25 @@ No inbound ports are required for the poller. The optional ops view listens on
 `API_PORT`, but it is gated only by a shared secret — keep it on localhost or
 behind a VPN/reverse proxy with real auth.
 
+## Option 0 — Vercel: the CONSOLE ONLY, in demo mode
+
+`vercel.json` publishes `web/` as a static site. This is genuinely useful for
+sharing the interface (a link anyone can open, no install), and it is all Vercel
+can host: the poller is an always-on process and the API needs SQLite on a
+persistent disk, neither of which exists on a serverless platform.
+
+What a Vercel deployment shows: every screen, fully interactive, running on the
+bundled demo fixtures — the "Demo data" pill in the header says so.
+What it does NOT show: your real leads. The console has no service to read from
+there, so nothing from Bitrix24 or Teams appears.
+
+```bash
+vercel login          # once
+vercel --prod         # publishes web/ as a static site
+```
+
+For the working system — live leads, polling, CRM writes — use Option A or B.
+
 ## Option A — Docker (any VPS, Railway, Render, Fly.io)
 
 ```bash
