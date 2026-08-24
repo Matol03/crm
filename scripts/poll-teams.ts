@@ -30,6 +30,9 @@ async function main(): Promise<void> {
     maxSessionDurationMs: cfg.maxSessionDurationMs,
   });
 
+  /** Set when a session fails because the model's quota is exhausted. */
+  let quotaExhausted = false;
+
   // Watermark: only messages newer than this are ingested. Persisted so a
   // restart resumes rather than re-reading the whole channel (message-level
   // idempotency makes any overlap harmless regardless).
@@ -68,6 +71,9 @@ async function main(): Promise<void> {
       }
       if (res.replyText) console.log(`  reply: ${res.replyText}`);
 
+      if (res.status === 'error' && /429|RESOURCE_EXHAUSTED|quota/i.test(res.error ?? '')) {
+        quotaExhausted = true;
+      }
       if (res.status === 'error') {
         const oldest = bundle.items.reduce(
           (min, i) => (new Date(i.timestamp).getTime() < new Date(min).getTime() ? i.timestamp : min),
@@ -98,9 +104,27 @@ async function main(): Promise<void> {
   }
 
   console.log(`[watch] polling every ${cfg.pollIntervalMs}ms — Ctrl+C to stop`);
+  // An exhausted DAILY model quota cannot be retried away, so hammering the
+  // provider every poll wastes calls and floods the log. Back off hard when we
+  // see it, and return to the normal cadence as soon as a poll succeeds.
+  const QUOTA_BACKOFF_MS = 15 * 60_000;
+  let quotaBackoff = false;
+
   for (;;) {
-    await pollOnce(false).catch((e) => console.error('[poll error]', e instanceof Error ? e.message : e));
-    await new Promise((r) => setTimeout(r, cfg.pollIntervalMs));
+    quotaBackoff = false;
+    await pollOnce(false).catch((e) => {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/429|RESOURCE_EXHAUSTED|quota/i.test(msg)) quotaBackoff = true;
+      console.error('[poll error]', msg);
+    });
+    if (quotaExhausted) {
+      quotaExhausted = false;
+      console.log(`[quota] model quota exhausted — pausing ${QUOTA_BACKOFF_MS / 60000} min before the next poll.`);
+      console.log('[quota] messages are NOT lost: the watermark is held and they are retried after the pause.');
+      await new Promise((r) => setTimeout(r, QUOTA_BACKOFF_MS));
+      continue;
+    }
+    await new Promise((r) => setTimeout(r, quotaBackoff ? QUOTA_BACKOFF_MS : cfg.pollIntervalMs));
   }
 }
 
