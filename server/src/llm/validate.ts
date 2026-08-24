@@ -169,6 +169,14 @@ export function validateExtraction(
   setC('priority', conf.priority);
   setC('leadType', conf.leadType);
 
+  // Per-field quotes: keep only string values, trimmed.
+  const evidence: Record<string, string> = {};
+  if (o.evidence && typeof o.evidence === 'object') {
+    for (const [k, v] of Object.entries(o.evidence as Record<string, unknown>)) {
+      if (typeof v === 'string' && v.trim()) evidence[k] = v.trim();
+    }
+  }
+
   return {
     name: strOrNull(o.name),
     company: strOrNull(o.company),
@@ -180,6 +188,7 @@ export function validateExtraction(
     priorityRaw: strOrNull(o.priorityRaw),
     leadTypeRaw,
     confidence,
+    ...(Object.keys(evidence).length ? { evidence } : {}),
     summaryRu,
     verbatim:
       typeof o.verbatim === 'string' && o.verbatim.trim()

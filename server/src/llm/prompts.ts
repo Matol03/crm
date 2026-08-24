@@ -43,7 +43,9 @@ Return STRICT JSON only, matching this shape (nulls allowed for missing scalars)
  "emails":[{"value":"a@b.c","type":"WORK|PERSONAL|OTHER"}],
  "productInterestRaw":null,"priorityRaw":null,"leadTypeRaw":"customer|partner|unclear",
  "confidence":{"name":0,"company":0,"position":0,"country":0,"phones":0,"emails":0,"productInterest":0,"priority":0,"leadType":0},
- "summaryRu":"...","verbatim":"..."}`;
+ "evidence":{"name":"<short exact quote you read the name from>","company":"...","position":"...","country":"...","phone":"...","email":"...","productInterest":"...","priority":"..."},
+ "summaryRu":"...","verbatim":"..."}
+For "evidence", quote the source text EXACTLY as it appears (a few words is enough). Omit a field from "evidence" if you inferred it rather than reading it.`;
 
 export function extractionUser(segmentText: string, cardText: string | null): string {
   return `BUSINESS CARD TEXT (may be empty):\n${cardText ?? '(none)'}\n\nMESSAGE TEXT + VOICE TRANSCRIPT (chronological):\n${segmentText || '(none)'}\n\nReturn the extraction JSON.`;

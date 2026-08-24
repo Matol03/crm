@@ -26,6 +26,7 @@ import type {
 import type { Db } from '../db/index.js';
 import { applyGate } from '../extraction/gating.js';
 import { reconcileName } from '../extraction/sourcePriority.js';
+import { resolveProvenance } from '../extraction/provenance.js';
 import { isLead } from '../contracts/extraction.js';
 import { buildListFields, type Campaign, type ListValuesByField } from '../mapping/leadFields.js';
 import { resolveOwner } from '../identity/index.js';
@@ -118,6 +119,9 @@ export class Pipeline {
         const reconciled = reconcileName(gated.name, cardText);
         gated.name = reconciled.name;
         if (reconciled.warning) gated.warnings.push(reconciled.warning);
+
+        // Link every written value back to the message it was read from (S7).
+        gated.provenance = resolveProvenance(segItems, gated, raw.evidence ?? {});
 
         // Non-lead filter (S6): skip segments without a name/phone/email/substance.
         if (!isLead({ name: gated.name, phones: gated.phones, emails: gated.emails, productInterestRaw: gated.productInterestRaw, priorityRaw: gated.priorityRaw })) {

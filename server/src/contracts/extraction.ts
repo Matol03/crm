@@ -50,10 +50,31 @@ export interface RawExtraction {
   priorityRaw: string | null;
   leadTypeRaw: LeadTypeRaw;
   confidence: ExtractionConfidence;
+  /**
+   * Short verbatim quote the model read each value from, keyed by field.
+   * Used to resolve provenance back to a specific source message; optional
+   * because a value may be inferred rather than quoted.
+   */
+  evidence?: Record<string, string>;
   /** Russian-language summary, incl. the manager's evaluative judgments. */
   summaryRu: string;
   /** Full untouched text + transcript, concatenated in chronological order. */
   verbatim: string;
+}
+
+/**
+ * Where a single extracted value came from.
+ *
+ * `method` records how the link was established, so the UI can distinguish a
+ * value quoted verbatim from one the model inferred:
+ *   'quote'   — the model's own quote was located in that message
+ *   'value'   — the extracted value itself was found in that message
+ *   'inferred'— no source text matched; no message is claimed
+ */
+export interface FieldProvenance {
+  messageId: string | null;
+  quote: string | null;
+  method: 'quote' | 'value' | 'inferred';
 }
 
 /**
@@ -73,6 +94,14 @@ export interface GatedExtraction {
   leadType: 'customer' | 'partner';
   summaryRu: string;
   verbatim: string;
+  /**
+   * Per-field confidence carried through from the model. Retained (rather than
+   * consumed and discarded by the gate) so the operator UI can show how sure
+   * the system was about each value it wrote.
+   */
+  confidence: ExtractionConfidence;
+  /** Field -> the source message and quote it was read from. */
+  provenance: Record<string, FieldProvenance>;
   /** Human-readable notes about dropped fields, conflicts, fallbacks. */
   warnings: string[];
 }

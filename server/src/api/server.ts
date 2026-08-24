@@ -213,6 +213,9 @@ export function createApiServer(app: ApiApp, config: ApiServerConfig): Server {
       needsAttachmentRetry: lead.needs_attachment_retry === 1,
       warnings: parseJson(lead.warnings_json) ?? [],
       fields: parseJson(lead.fields_json),
+      // Surfaced explicitly so the UI does not have to reach into fields.gated.
+      confidence: (parseJson(lead.fields_json) as { gated?: { confidence?: unknown } } | null)?.gated?.confidence ?? null,
+      provenance: (parseJson(lead.fields_json) as { gated?: { provenance?: unknown } } | null)?.gated?.provenance ?? null,
       verbatim: lead.transcript_verbatim,
       aiSummaryRu: lead.ai_summary_ru,
       sourceMessages: sourceMessagesFor(db, lead.session_id),

@@ -145,6 +145,11 @@ export function applyGate(
     leadType,
     summaryRu: raw.summaryRu,
     verbatim: raw.verbatim,
+    // Retained rather than discarded: the operator UI shows how sure the model
+    // was about each value it wrote (previously this was dropped at the gate).
+    confidence: raw.confidence,
+    // Filled in by resolveProvenance() once the segment's messages are known.
+    provenance: {},
     warnings,
   };
 }

@@ -4,6 +4,38 @@ Living record of the calls made while building the trade-show lead service,
 including anything that diverged from `PRD-lead-service-FINAL-for-Claude-Code.md`
 and why. Newest decisions first within each section.
 
+## Confidence and provenance are now recorded, not discarded
+
+Originally `applyGate()` consumed the model's per-field confidence to decide
+gating and then threw it away, and nothing recorded *which message* a value came
+from — so the operator UI could only ever show "not recorded" for both.
+
+- **Confidence** is now carried through into `GatedExtraction` and persisted in
+  `fields_json`, and surfaced on `GET /api/leads/:id` as `confidence`.
+- **Provenance** (`extraction/provenance.ts`) links every written value back to
+  the exact source message. It is resolved in CODE, not asked of the model,
+  because attribution is a lookup rather than a judgement — the value (or the
+  model's own quote for it) either appears in a message or it does not, which
+  makes the link verifiable and impossible to hallucinate. Order:
+  1. the model's `evidence` quote located in a message -> `quote`
+  2. the extracted value located in a message          -> `value`
+     (phones compared digits-only so formatting differences still match)
+  3. nothing matched                                   -> `inferred`, `messageId: null`
+  Ties are broken by the PRD's source priority: card > typed text > voice.
+  A value that cannot be located is reported as un-attributed rather than
+  pinned to an arbitrary message.
+- The extraction prompt now also asks for a short `evidence` quote per field;
+  it is optional, and a missing quote simply falls through to step 2.
+
+Verified live (Gemini, card + voice fixture): all six card fields resolved to the
+card message and both interest/priority fields to the voice note, every one by
+`quote`.
+
+**Caveat worth knowing:** Gemini returns `1.0` confidence for essentially every
+field — self-reported confidence is poorly calibrated, which is exactly why the
+deterministic validators (format checks, source priority, Partner double-check)
+remain the real gate rather than the model's own score.
+
 ## Portal overrides STATUS_ID on lead creation — re-asserted in the same batch
 
 Live-write verification showed newly created leads landing in **`CONVERTED`**

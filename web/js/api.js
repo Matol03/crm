@@ -126,6 +126,39 @@ function normaliseListItem(row) {
   };
 }
 
+/**
+ * Map the service's confidence keys onto the UI's field keys.
+ * The model scores `phones`/`emails` (collections); the UI shows one of each.
+ */
+function normaliseConfidence(conf) {
+  if (!conf || typeof conf !== 'object') return { overall: null, fields: {} };
+  const fields = {
+    name: conf.name, company: conf.company, position: conf.position,
+    country: conf.country, phone: conf.phones, email: conf.emails,
+    productInterest: conf.productInterest, priority: conf.priority,
+  };
+  for (const k of Object.keys(fields)) if (typeof fields[k] !== 'number') delete fields[k];
+  const values = Object.values(fields);
+  // Overall = mean of what was actually scored; null when nothing was.
+  const overall = values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
+  return { overall, fields };
+}
+
+/** Backend provenance → the shape the evidence panel expects. */
+function normaliseProvenance(prov) {
+  if (!prov || typeof prov !== 'object') return {};
+  const out = {};
+  for (const [field, p] of Object.entries(prov)) {
+    if (!p || !p.messageId) continue;   // 'inferred' claims no message
+    out[field] = {
+      messageId: p.messageId,
+      quote: p.quote || null,
+      ...(p.method === 'value' ? { note: 'Located by matching the extracted value' } : {}),
+    };
+  }
+  return out;
+}
+
 /** Backend detail payload → full UI lead. */
 function normaliseDetail(row) {
   const base = normaliseListItem(row);
@@ -155,6 +188,8 @@ function normaliseDetail(row) {
     verbatim: row.verbatim || gated.verbatim || '',
     aiSummary: row.aiSummaryRu || gated.summaryRu || '',
     sourceMessages: msgs,
+    confidence: normaliseConfidence(row.confidence ?? gated.confidence),
+    provenance: normaliseProvenance(row.provenance ?? gated.provenance),
     journal: buildJournal(row, msgs),
     crm: {
       state: row.status === 'failed' ? 'failed' : row.bitrixLeadId ? 'created' : 'pending',
