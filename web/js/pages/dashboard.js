@@ -5,8 +5,8 @@
  * work stuck in the pipeline, and what happened in the last few minutes.
  */
 
-import { h, icon, replace, fmtNum, fmtPct1, fmtTime, fmtAgo } from '../ui/dom.js';
-import { panel, metric, statusBadge, skeleton, errorState, badge } from '../ui/primitives.js';
+import { h, icon, replace, fmtNum, fmtTime, fmtAgo } from '../ui/dom.js';
+import { panel, metric, statusBadge, skeleton, apiErrorState, badge } from '../ui/primitives.js';
 import { getDashboard } from '../api.js';
 import { navigate } from '../router.js';
 import { state } from '../state.js';
@@ -17,7 +17,7 @@ function pipeline(stages) {
     stages.map((s) => h(
       'div.pipe-stage' + (s.active ? '.is-active' : '') + (s.terminal ? '.is-terminal' : ''),
       h('div.pipe-stage-name', s.name),
-      h('div.pipe-stage-count', fmtNum(s.count)),
+      h('div.pipe-stage-count', s.count == null ? h('span.faint', '·') : fmtNum(s.count)),
       h('div.pipe-stage-note', s.note),
     )),
   );
@@ -50,52 +50,38 @@ export async function renderDashboard(root) {
     h('div', { style: { marginTop: 'var(--sp-4)' } }, panel({ body: skeleton(4) })),
   );
 
-  let result;
+  let data;
   try {
-    result = await getDashboard();
+    data = await getDashboard();
   } catch (err) {
-    replace(root, errorState({
-      title: 'Could not load the dashboard',
-      note: 'The interface could not reach the lead service. Your data is unaffected — this screen only reads.',
-      retry: () => renderDashboard(root),
-    }));
+    replace(root, apiErrorState(err, () => renderDashboard(root)));
     return;
   }
 
-  const { kpis, pipeline: stages, activity } = result.data;
-  const isDemo = result.source === 'demo';
+  const { kpis, pipeline: stages, activity } = data;
 
   replace(root,
     h('div.page-head',
       h('div',
         h('h1.page-title', state.campaign),
-        h('p.page-subtitle',
-          'Live message processing and CRM delivery',
-          isDemo ? ' · showing demo fixtures' : ' · connected to the live service')),
+        h('p.page-subtitle', 'Live from Bitrix24 · leads created from Teams messages')),
       h('div.row',
         h('button.btn', { onclick: () => navigate('leads') }, 'View all leads', icon('chevronRight', 13)))),
 
     // ── Primary KPIs ──────────────────────────────────────────────────
     h('div.grid.grid-4',
-      metric({ label: 'Messages', value: fmtNum(kpis.messages), delta: kpis.messagesDelta, note: 'today' }),
-      metric({ label: 'Leads', value: fmtNum(kpis.leads), delta: kpis.leadsDelta, note: 'created' }),
+      metric({ label: 'Leads in Bitrix24', value: fmtNum(kpis.leads), note: 'this portal' }),
+      metric({ label: 'Created from Teams', value: fmtNum(kpis.fromPipeline), note: `${fmtNum(kpis.manual)} entered manually` }),
       metric({
-        label: 'Needs review', value: fmtNum(kpis.review),
-        note: kpis.review ? 'awaiting a decision' : 'nothing waiting',
+        label: 'Needs attention', value: fmtNum(kpis.review),
+        note: kpis.review ? 'warnings or retries' : 'nothing waiting',
         tone: kpis.review ? 'warn' : undefined,
       }),
       metric({
-        label: 'Errors', value: fmtNum(kpis.errors),
-        note: kpis.errors ? 'retryable' : 'none',
+        label: 'Failed', value: fmtNum(kpis.errors),
+        note: kpis.errors ? 'marked unqualified' : 'none',
         tone: kpis.errors ? 'danger' : undefined,
       }),
-    ),
-
-    // ── Secondary KPIs ────────────────────────────────────────────────
-    h('div.grid.grid-3', { style: { marginTop: 'var(--sp-4)' } },
-      metric({ label: 'Duplicates detected', value: kpis.duplicates == null ? '—' : fmtNum(kpis.duplicates), note: 'flagged for review' }),
-      metric({ label: 'Avg processing', value: kpis.avgProcessingSec == null ? '—' : `${kpis.avgProcessingSec} sec`, note: 'message → CRM' }),
-      metric({ label: 'CRM success', value: kpis.crmSuccess == null ? '—' : fmtPct1(kpis.crmSuccess), delta: kpis.crmDelta, note: 'writes accepted' }),
     ),
 
     // ── Pipeline ──────────────────────────────────────────────────────

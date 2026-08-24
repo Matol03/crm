@@ -15,6 +15,7 @@ import { h, icon, fmtPct } from './dom.js';
 
 export const STATUS = {
   created:     { label: 'Created',      tone: 'ok' },
+  new:         { label: 'Unprocessed',  tone: 'info' },
   synced:      { label: 'Synced',       tone: 'ok' },
   done:        { label: 'Created',      tone: 'ok' },
   processing:  { label: 'Processing',   tone: 'info', live: true },
@@ -33,8 +34,10 @@ export const STATUS = {
 };
 
 /** Status badge. Falls back to a neutral badge for unknown values. */
-export function statusBadge(status, { large = false } = {}) {
-  const meta = STATUS[status] || { label: status || 'Unknown', tone: 'neutral' };
+export function statusBadge(status, { large = false, label } = {}) {
+  // Copy: STATUS is shared, so a label override must not mutate it.
+  const meta = { ...(STATUS[status] || { label: status || 'Unknown', tone: 'neutral' }) };
+  if (label) meta.label = label;
   return h(
     `span.badge.badge-${meta.tone}${large ? '.badge-lg' : ''}`,
     h('span.dot' + (meta.live ? '.live' : '')),
@@ -146,6 +149,39 @@ export function errorState({ title = 'Something went wrong', note, retry }) {
     retry && h('div', { style: { marginTop: 'var(--sp-3)' } },
       h('button.btn.btn-primary', { onclick: retry }, icon('refresh', 14), 'Try again')),
   );
+}
+
+/**
+ * Turns an ApiError into an explanation the operator can act on. The three
+ * cases mean very different things, so they must not collapse into one message.
+ */
+export function apiErrorState(err, retry) {
+  const kind = err?.kind;
+  if (kind === 'auth') {
+    return emptyState({
+      title: 'Connect to the lead service',
+      note: 'This console reads live data from Bitrix24 through the service. Enter the API secret using the “Demo data / Live” control in the header to begin.',
+    });
+  }
+  if (kind === 'crm') {
+    return errorState({
+      title: 'No Bitrix24 connection configured',
+      note: err.message,
+      retry,
+    });
+  }
+  if (kind === 'network') {
+    return errorState({
+      title: 'The lead service is not responding',
+      note: 'It may be restarting. Nothing is lost — the poller retries and this screen only reads.',
+      retry,
+    });
+  }
+  return errorState({
+    title: 'Could not load this screen',
+    note: err?.message || 'An unexpected problem occurred.',
+    retry,
+  });
 }
 
 export function banner(tone, ...content) {

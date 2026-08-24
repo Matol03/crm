@@ -1,96 +1,82 @@
 /**
- * Campaign settings (admin only).
+ * Campaign (admin) — the constants stamped on every lead, and the reference
+ * lists they map onto.
  *
- * These are the fixed values applied to every lead created during the period.
- * Bitrix's numeric list IDs are deliberately never shown — operators pick
- * labels, the service resolves the IDs.
+ * Read-only on purpose: these values come from the service's environment and
+ * from Bitrix24 itself, so editing them here would give a false impression of
+ * control. The screen shows what is in force and where to change it.
  */
 
 import { h, replace } from '../../ui/dom.js';
-import { panel, badge, toast } from '../../ui/primitives.js';
-import { getCampaign } from '../../api.js';
+import { panel, badge, apiErrorState, banner } from '../../ui/primitives.js';
+import { getReference, getSystem } from '../../api.js';
+
+const FIELD_TITLES = {
+  UF_CRM_LEAD_TYPE: 'Lead type',
+  UF_CRM_REGION: 'Region',
+  UF_CRM_EXHIBITION: 'Exhibition',
+  UF_CRM_PRODUCT_INTEREST: 'Product interest',
+  UF_CRM_PRIORITY: 'Priority',
+};
 
 export async function renderCampaign(root) {
-  const { data: c } = await getCampaign();
-  let active = c.active;
+  let ref, sys;
+  try {
+    [ref, sys] = await Promise.all([getReference(), getSystem()]);
+  } catch (err) {
+    replace(root, apiErrorState(err, () => renderCampaign(root)));
+    return;
+  }
 
-  const toggle = h('button.switch' + (active ? '.is-on' : ''), {
-    role: 'switch', 'aria-checked': String(active), 'aria-label': 'Campaign active',
-    onclick: () => {
-      active = !active;
-      toggle.classList.toggle('is-on', active);
-      toggle.setAttribute('aria-checked', String(active));
-      statusBadgeHost.replaceChildren(active ? badge('Active', 'ok') : badge('Paused', 'neutral'));
-    },
-  });
-  const statusBadgeHost = h('span', active ? badge('Active', 'ok') : badge('Paused', 'neutral'));
-
-  const select = (label, options, value) => h('div',
-    h('label.field-label', label),
-    h('select.select', { style: { width: '100%' } },
-      options.map((o) => h('option', { selected: o === value || null }, o))));
+  const campaign = sys.campaign || ref.campaign || {};
+  const tuning = sys.tuning || {};
 
   replace(root,
     h('div.page-head',
       h('div',
         h('h1.page-title', 'Campaign'),
-        h('p.page-subtitle', 'Applied to every lead created during this exhibition')),
-      h('div.row',
-        h('button.btn', { onclick: () => toast('Changes discarded') }, 'Discard'),
-        h('button.btn.btn-primary', { onclick: () => toast('Campaign settings saved', 'ok') }, 'Save changes'))),
+        h('p.page-subtitle', 'Applied to every lead this service creates'))),
 
-    h('div.grid', { style: { gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', alignItems: 'start' } },
+    banner('info',
+      h('div',
+        h('div.fw-medium', 'Configured in the service environment'),
+        h('div.t-xs', { style: { marginTop: '2px' } },
+          'These values come from the running service and from Bitrix24. Change them in the service configuration or in the CRM, then reload.'))),
+
+    h('div.grid.grid-2', { style: { marginTop: 'var(--sp-4)', alignItems: 'start' } },
       panel({
         title: 'Identity',
-        body: h('div.grid.grid-2',
-          h('div',
-            h('label.field-label', 'Exhibition'),
-            h('input.input', { value: c.exhibition })),
-          h('div',
-            h('label.field-label', 'Source'),
-            h('input.input', { value: c.source })),
-          h('div',
-            h('label.field-label', 'Starts'),
-            h('input.input', { type: 'date', value: c.startsAt })),
-          h('div',
-            h('label.field-label', 'Ends'),
-            h('input.input', { type: 'date', value: c.endsAt }))),
+        body: h('dl.dl',
+          h('dt', 'Exhibition'), h('dd.fw-medium', campaign.exhibition || '—'),
+          h('dt', 'Source'), h('dd', campaign.source || '—')),
       }),
-
       panel({
-        title: 'Status',
-        body: h('div',
-          h('div.between',
-            h('div',
-              h('div.t-sm.fw-medium', 'Accept new messages'),
-              h('div.t-xs.subtle', { style: { marginTop: '2px' } },
-                'When paused, messages are still stored but no leads are created.')),
-            toggle),
-          h('div', { style: { marginTop: 'var(--sp-4)' } }, statusBadgeHost)),
+        title: 'Processing rules',
+        body: h('dl.dl',
+          h('dt', 'Confidence threshold'),
+          h('dd', tuning.confidenceThreshold != null ? `${Math.round(tuning.confidenceThreshold * 100)}%` : '—'),
+          h('dt', 'Grouping idle timeout'),
+          h('dd', tuning.idleTimeoutMs ? `${Math.round(tuning.idleTimeoutMs / 60000)} min` : '—'),
+          h('dt', 'Maximum session'),
+          h('dd', tuning.maxSessionDurationMs ? `${Math.round(tuning.maxSessionDurationMs / 60000)} min` : '—'),
+          h('dt', 'Poll interval'),
+          h('dd', tuning.pollIntervalMs ? `${Math.round(tuning.pollIntervalMs / 1000)} s` : '—'),
+          h('dt', 'Default owner'),
+          h('dd', tuning.defaultOwnerId != null ? (ref.users?.[String(tuning.defaultOwnerId)] || `#${tuning.defaultOwnerId}`) : '—')),
       }),
     ),
 
     h('div', { style: { marginTop: 'var(--sp-4)' } },
       panel({
-        title: 'Defaults',
-        subtitle: 'Used when the message does not clearly indicate a value',
-        body: h('div.grid.grid-3',
-          select('Lead type', c.leadTypes, 'Customer'),
-          select('Priority', c.priorities, 'Medium'),
-          select('Region', c.regions, 'Europe')),
-      })),
-
-    h('div', { style: { marginTop: 'var(--sp-4)' } },
-      panel({
         title: 'Reference lists',
-        subtitle: 'Synchronised from Bitrix24 — operators choose labels, never raw IDs',
-        body: h('div.grid.grid-2',
-          h('div',
-            h('div.eyebrow', { style: { marginBottom: 'var(--sp-2)' } }, 'Product interests'),
-            h('div.row.wrap', { style: { gap: '6px' } }, c.productInterests.map((p) => badge(p, 'neutral')))),
-          h('div',
-            h('div.eyebrow', { style: { marginBottom: 'var(--sp-2)' } }, 'Regions'),
-            h('div.row.wrap', { style: { gap: '6px' } }, c.regions.map((r) => badge(r, 'neutral'))))),
+        subtitle: 'Read live from Bitrix24 — extracted text is matched to these labels, never to raw IDs',
+        body: Object.keys(ref.lists || {}).length
+          ? h('div.col', { style: { gap: 'var(--sp-5)' } },
+              Object.entries(ref.lists).map(([code, options]) => h('div',
+                h('div.eyebrow', { style: { marginBottom: 'var(--sp-2)' } }, FIELD_TITLES[code] || code),
+                h('div.row.wrap', { style: { gap: '6px' } },
+                  Object.values(options).map((label) => badge(label, 'neutral'))))))
+          : h('p.t-sm.faint', 'No list fields were returned by the portal.'),
       })),
   );
 }

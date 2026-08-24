@@ -17,6 +17,8 @@ import type { Db } from '../db/index.js';
 import type { Pipeline } from '../pipeline/index.js';
 import type { SessionBundle } from '../contracts/index.js';
 import { loadConfig } from '../config/index.js';
+import { BitrixRepo } from './bitrixRepo.js';
+import { createHttpTransport } from '../bitrix/transport.js';
 import { buildApp } from '../app.js';
 
 /** Structural view of the wired app this server needs (buildApp / buildMockApp). */
@@ -28,6 +30,12 @@ export interface ApiApp {
 /** Only the secret is required to gate the API. */
 export interface ApiServerConfig {
   apiSharedSecret: string;
+  /** Portal webhook. When absent the CRM-backed routes report unavailable. */
+  bitrixWebhookUrl?: string;
+  campaignExhibition?: string;
+  campaignSource?: string;
+  /** Operational context for the admin screens (never includes secrets). */
+  system?: Record<string, unknown>;
 }
 
 const WEB_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../web');
@@ -117,6 +125,26 @@ function sourceMessagesFor(db: Db, sessionId: string): SessionBundle['items'] {
 export function createApiServer(app: ApiApp, config: ApiServerConfig): Server {
   const { db, pipeline } = app;
 
+  // CRM-backed read model. Present only when a webhook is configured; the
+  // routes below report `unavailable` rather than inventing data without it.
+  const repo = config.bitrixWebhookUrl
+    ? new BitrixRepo({
+        db,
+        webhookUrl: config.bitrixWebhookUrl,
+        transport: createHttpTransport(config.bitrixWebhookUrl),
+      })
+    : null;
+
+  /** Guard for every CRM-backed route. */
+  function requireRepo(res: ServerResponse): BitrixRepo | null {
+    if (repo) return repo;
+    sendJson(res, 503, {
+      error: 'crm_unavailable',
+      message: 'No Bitrix24 webhook is configured, so there is no CRM data to show.',
+    });
+    return null;
+  }
+
   return createServer((req, res) => {
     void handle(req, res).catch(() => {
       // Never leak an error message (may carry PII) — generic 500.
@@ -155,6 +183,67 @@ export function createApiServer(app: ApiApp, config: ApiServerConfig): Server {
       }
     } else {
       sendJson(res, 404, { error: 'not found' });
+      return;
+    }
+
+    // ── CRM-backed routes: the console reads the portal, not fixtures ──
+    if (method === 'GET' && path === '/api/crm/leads') {
+      const r = requireRepo(res); if (!r) return;
+      sendJson(res, 200, await r.leads());
+      return;
+    }
+    const crmLead = /^\/api\/crm\/leads\/(\d+)$/.exec(path);
+    if (method === 'GET' && crmLead) {
+      const r = requireRepo(res); if (!r) return;
+      const lead = await r.lead(Number(crmLead[1]));
+      if (!lead) { sendJson(res, 404, { error: 'not found' }); return; }
+      sendJson(res, 200, lead);
+      return;
+    }
+    if (method === 'GET' && path === '/api/crm/analytics') {
+      const r = requireRepo(res); if (!r) return;
+      sendJson(res, 200, await r.analytics());
+      return;
+    }
+    if (method === 'GET' && path === '/api/crm/duplicates') {
+      const r = requireRepo(res); if (!r) return;
+      sendJson(res, 200, await r.duplicates());
+      return;
+    }
+    if (method === 'GET' && path === '/api/crm/attention') {
+      const r = requireRepo(res); if (!r) return;
+      sendJson(res, 200, await r.needsAttention());
+      return;
+    }
+    // Operational state for the admin screens. Secrets are never included —
+    // only whether a credential is configured.
+    if (method === 'GET' && path === '/api/system') {
+      const leads = db.listLeads();
+      sendJson(res, 200, {
+        ...(config.system ?? {}),
+        queues: {
+          failed: leads.filter((l) => l.status === 'failed').length,
+          needsAttachmentRetry: leads.filter((l) => l.needs_attachment_retry === 1).length,
+          processed: leads.filter((l) => l.status === 'done').length,
+        },
+        watermark: db.getCampaign('graph_watermark'),
+        employeeMap: db.handle
+          .prepare('SELECT teams_email, bitrix_user_id, display_name FROM employee_map')
+          .all(),
+      });
+      return;
+    }
+
+    if (method === 'GET' && path === '/api/crm/reference') {
+      const r = requireRepo(res); if (!r) return;
+      const ref = await r.reference();
+      sendJson(res, 200, {
+        ...ref,
+        campaign: {
+          exhibition: config.campaignExhibition ?? null,
+          source: config.campaignSource ?? null,
+        },
+      });
       return;
     }
 
@@ -253,7 +342,32 @@ export function createApiServer(app: ApiApp, config: ApiServerConfig): Server {
 export function startApi(): void {
   const cfg = loadConfig();
   const app = buildApp(cfg);
-  const server = createApiServer(app, cfg);
+  const server = createApiServer(app, {
+    apiSharedSecret: cfg.apiSharedSecret,
+    ...(cfg.bitrixWebhookUrl ? { bitrixWebhookUrl: cfg.bitrixWebhookUrl } : {}),
+    campaignExhibition: cfg.campaignExhibition,
+    campaignSource: cfg.campaignSource,
+    system: {
+      modes: {
+        msgraph: cfg.msgraphMode, bitrix: cfg.bitrixMode,
+        llm: cfg.llmMode, ocr: cfg.ocrMode, asr: cfg.asrMode,
+      },
+      providers: { llm: cfg.llmProvider, ocr: cfg.ocrProvider, model: cfg.geminiModel },
+      credentials: {
+        bitrixWebhook: cfg.bitrixWebhookUrl.length > 0,
+        graph: cfg.graph.clientSecret.length > 0,
+        gemini: cfg.geminiApiKey.length > 0,
+        deepseek: cfg.deepseekApiKey.length > 0,
+      },
+      channel: { teamsGroupId: cfg.graph.teamsGroupId, channelId: cfg.graph.channelId },
+      campaign: { exhibition: cfg.campaignExhibition, source: cfg.campaignSource },
+      tuning: {
+        idleTimeoutMs: cfg.idleTimeoutMs, maxSessionDurationMs: cfg.maxSessionDurationMs,
+        pollIntervalMs: cfg.pollIntervalMs, confidenceThreshold: cfg.confidenceThreshold,
+        defaultOwnerId: cfg.bitrixDefaultOwnerId,
+      },
+    },
+  });
   server.listen(cfg.apiPort, () => {
     // eslint-disable-next-line no-console
     console.log(`[api] listening on :${cfg.apiPort} (auth required: x-api-secret / ?secret)`);

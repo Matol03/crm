@@ -1,19 +1,16 @@
 /**
- * Data layer.
+ * Data layer — every screen reads through this module and nothing else.
  *
- * Every screen talks to this module and nothing else — components never call
- * `fetch` directly. Each getter returns `{ data, source }` where `source` is:
+ * There are no fixtures. All data comes from the running service:
  *
- *   'live' — served by the running lead-service API
- *   'demo' — fixture data (endpoint not implemented yet, or no API secret)
+ *   Bitrix24  -> the leads themselves, statuses, owners, list values
+ *   local DB  -> the AI metadata Bitrix does not store: per-field confidence,
+ *                provenance, the source Teams messages, verbatim and summary
  *
- * The UI surfaces that distinction rather than hiding it: a value the backend
- * does not actually record (per-field confidence, provenance) is shown as
- * "not recorded" in live mode instead of being invented. Wiring a new endpoint
- * later means changing one function here, not a component.
+ * The service merges the two and this module reshapes the result for the UI.
+ * When the console has no API secret, or the service cannot reach the portal,
+ * screens say so rather than showing invented numbers.
  */
-
-import * as mock from './mock.js';
 
 const SECRET_KEY = 'leadservice.apiSecret';
 
@@ -23,132 +20,104 @@ export const setSecret = (v) => {
   else sessionStorage.removeItem(SECRET_KEY);
 };
 
-/** Tracks whether the last live call succeeded, for the connection indicator. */
+/** Reflects the last call, for the header indicator. */
 export const connection = { live: false, checked: false, reason: '' };
 
-/**
- * Call the real API. Resolves to `null` (never throws) when the endpoint is
- * missing, unauthorised or unreachable, so callers can fall back to fixtures.
- */
-async function live(path, { method = 'GET', body } = {}) {
-  const secret = getSecret();
-  if (!secret) {
-    connection.reason = 'No API secret';
-    return null;
-  }
-  try {
-    const res = await fetch(path, {
-      method,
-      headers: {
-        'x-api-secret': secret,
-        ...(body ? { 'content-type': 'application/json' } : {}),
-      },
-      ...(body ? { body: JSON.stringify(body) } : {}),
-    });
-    if (!res.ok) {
-      connection.reason = res.status === 401 ? 'Invalid API secret' : `API ${res.status}`;
-      return null;
-    }
-    connection.live = true;
-    connection.reason = '';
-    return await res.json();
-  } catch {
-    connection.reason = 'Service unreachable';
-    return null;
+/** Thrown for any condition a screen should explain rather than crash on. */
+export class ApiError extends Error {
+  constructor(message, { kind = 'error' } = {}) {
+    super(message);
+    this.kind = kind;   // 'auth' | 'crm' | 'network' | 'error'
   }
 }
 
-/** Probe the unauthenticated health route to show connection state. */
+async function call(path) {
+  const secret = getSecret();
+  if (!secret) {
+    connection.live = false;
+    connection.reason = 'No API secret';
+    throw new ApiError('This console needs the API secret before it can read anything.', { kind: 'auth' });
+  }
+  let res;
+  try {
+    res = await fetch(path, { headers: { 'x-api-secret': secret } });
+  } catch {
+    connection.live = false;
+    connection.reason = 'Service unreachable';
+    throw new ApiError('The lead service is not responding.', { kind: 'network' });
+  }
+  if (res.status === 401) {
+    connection.live = false;
+    connection.reason = 'Invalid API secret';
+    throw new ApiError('That API secret was rejected.', { kind: 'auth' });
+  }
+  if (res.status === 503) {
+    connection.live = false;
+    connection.reason = 'CRM not configured';
+    const body = await res.json().catch(() => ({}));
+    throw new ApiError(body.message || 'No Bitrix24 connection is configured.', { kind: 'crm' });
+  }
+  if (!res.ok) {
+    connection.reason = `API ${res.status}`;
+    throw new ApiError(`The service returned an unexpected response (${res.status}).`);
+  }
+  connection.live = true;
+  connection.reason = '';
+  return res.json();
+}
+
 export async function checkConnection() {
   try {
     const res = await fetch('/health');
     connection.checked = true;
-    connection.live = res.ok && !!getSecret();
-    if (!res.ok) connection.reason = 'Service unreachable';
-    return res.ok;
+    if (!res.ok) { connection.live = false; connection.reason = 'Service unreachable'; return false; }
+    if (!getSecret()) { connection.live = false; connection.reason = 'No API secret'; return false; }
+    // Confirm the secret actually works and the portal is reachable.
+    await call('/api/crm/reference');
+    return true;
   } catch {
     connection.checked = true;
-    connection.live = false;
-    connection.reason = 'Service unreachable';
     return false;
   }
 }
 
-const ok = (data) => ({ data, source: 'live' });
-const demo = (data) => ({ data, source: 'demo' });
-
-/* ── Normalisation ────────────────────────────────────────────────────────
-   Maps the service's storage shape onto the shape the UI renders. Keeping
-   this in one place is what lets the components stay backend-agnostic.
+/* ── Shaping ──────────────────────────────────────────────────────────────
+   The service speaks Bitrix's vocabulary; the UI has its own. One place to
+   translate, so components never deal with STATUS_SEMANTIC_ID or UF_ fields.
    ---------------------------------------------------------------------- */
 
-/** Split a stored title ("Anna Weber — BMW AG") into person + company. */
-function splitTitle(title = '') {
-  const [name, company] = String(title).split(' — ');
-  return { name: name || title || 'Untitled lead', company: company || null };
-}
-
-/** Map the backend's lead-state-machine value to a UI status. */
-function uiStatus(raw, bitrixLeadId) {
-  if (raw === 'done') return bitrixLeadId ? 'created' : 'processing';
-  if (raw === 'failed') return 'failed';
-  if (['received', 'segmented', 'extracted', 'mapped', 'dedup_checked', 'writing_crm'].includes(raw)) return 'processing';
-  return raw || 'processing';
-}
-
-/** Backend list row → UI lead summary. */
-function normaliseListItem(row) {
-  const { name, company } = splitTitle(row.title);
-  return {
-    id: row.id,
-    bitrixLeadId: row.bitrixLeadId ?? null,
-    status: uiStatus(row.status, row.bitrixLeadId),
-    createdAt: row.createdAt,
-    updatedAt: row.createdAt,
-    person: { name, position: null },
-    company,
-    country: null,
-    region: null,
-    owner: null,
-    leadType: null,
-    productInterest: null,
-    priority: null,
-    phones: [],
-    emails: [],
-    // The service does not persist per-field confidence today.
-    confidence: { overall: null, fields: {} },
-    warnings: [],
-    needsAttachmentRetry: !!row.needsAttachmentRetry,
-    sourceMessages: [],
-    provenance: {},
-    journal: [],
-    crm: { state: row.bitrixLeadId ? 'created' : 'pending', bitrixLeadId: row.bitrixLeadId ?? null },
-  };
-}
-
 /**
- * Map the service's confidence keys onto the UI's field keys.
- * The model scores `phones`/`emails` (collections); the UI shows one of each.
+ * Bitrix status -> a semantic key the UI colours by. The human-readable label
+ * always comes from the portal itself (`statusLabel`), so a status renamed in
+ * Bitrix shows through without a code change.
  */
-function normaliseConfidence(conf) {
-  if (!conf || typeof conf !== 'object') return { overall: null, fields: {} };
+function statusKey(l) {
+  if (l.statusId === 'JUNK' || l.statusSemantic === 'F') return 'failed';
+  if (l.statusId === 'CONVERTED' || l.statusSemantic === 'S') return 'created';
+  if (l.statusId === 'NEW') return 'new';
+  return 'processing';
+}
+
+/** Confidence keys differ (`phones`/`emails` are collections). */
+function shapeConfidence(conf) {
+  if (!conf) return { overall: null, fields: {} };
   const fields = {
     name: conf.name, company: conf.company, position: conf.position,
     country: conf.country, phone: conf.phones, email: conf.emails,
     productInterest: conf.productInterest, priority: conf.priority,
   };
   for (const k of Object.keys(fields)) if (typeof fields[k] !== 'number') delete fields[k];
-  // A score of 0 means the model did not extract that field at all. Averaging
-  // those in would drag the headline number down for a lead that is perfectly
-  // confident about everything it *did* find, so only scored fields count.
+  // A 0 means the model did not extract that field, so it must not drag the
+  // headline average down.
   const scored = Object.values(fields).filter((v) => v > 0);
-  const overall = scored.length ? scored.reduce((a, b) => a + b, 0) / scored.length : null;
-  return { overall, fields };
+  return {
+    overall: scored.length ? scored.reduce((a, b) => a + b, 0) / scored.length : null,
+    fields,
+  };
 }
 
-/** Backend provenance → the shape the evidence panel expects. */
-function normaliseProvenance(prov) {
-  if (!prov || typeof prov !== 'object') return {};
+function shapeProvenance(prov) {
+  if (!prov) return {};
   const out = {};
   for (const [field, p] of Object.entries(prov)) {
     if (!p || !p.messageId) continue;   // 'inferred' claims no message
@@ -161,152 +130,156 @@ function normaliseProvenance(prov) {
   return out;
 }
 
-/** Backend detail payload → full UI lead. */
-function normaliseDetail(row) {
-  const base = normaliseListItem(row);
-  const gated = row.fields?.gated || {};
-  const msgs = (row.sourceMessages || []).map((m, i) => ({
+function shapeLead(l) {
+  return {
+    id: String(l.bitrixLeadId),
+    bitrixLeadId: l.bitrixLeadId,
+    status: statusKey(l),
+    statusLabel: l.statusLabel,
+    createdAt: l.createdAt,
+    person: { name: l.name, position: l.position },
+    company: l.company,
+    country: l.region,
+    region: l.region,
+    exhibition: l.exhibition,
+    owner: l.owner ? { name: l.owner, id: l.ownerId } : null,
+    leadType: l.leadType,
+    productInterest: l.productInterest,
+    priority: l.priority,
+    phones: (l.phones || []).map((value) => ({ value, type: 'WORK' })),
+    emails: (l.emails || []).map((value) => ({ value, type: 'WORK' })),
+    teamsAuthor: l.teamsAuthor,
+    url: l.url,
+    /** False for a lead typed straight into Bitrix — it has no AI metadata. */
+    fromPipeline: l.fromPipeline,
+    localId: l.localId,
+    confidence: shapeConfidence(l.confidence),
+    warnings: [],
+    needsAttachmentRetry: false,
+    sourceMessages: [],
+    provenance: {},
+  };
+}
+
+/* ── Reads ──────────────────────────────────────────────────────────────── */
+
+export async function getLeads() {
+  return (await call('/api/crm/leads')).map(shapeLead);
+}
+
+export async function getLead(bitrixId) {
+  const l = await call(`/api/crm/leads/${encodeURIComponent(bitrixId)}`);
+  const msgs = (l.sourceMessages || []).map((m, i) => ({
     id: m.messageId || `m-${i}`,
     ts: m.timestamp,
     type: m.type,
-    text: m.text || null,
-    transcript: m.transcript || null,
-    ocrText: m.ocrText || null,
-    author: null,
+    text: m.text,
+    transcript: m.transcript,
+    ocrText: m.ocrText,
+    author: m.author,
     attachmentPending: !!m.attachmentPending,
   }));
 
   return {
-    ...base,
-    person: { name: gated.name || base.person.name, position: gated.position || null },
-    company: gated.company || base.company,
-    country: gated.country || null,
-    leadType: gated.leadType || null,
-    productInterest: gated.productInterestRaw || null,
-    priority: gated.priorityRaw || null,
-    phones: gated.phones || [],
-    emails: gated.emails || [],
-    warnings: row.warnings || [],
-    verbatim: row.verbatim || gated.verbatim || '',
-    aiSummary: row.aiSummaryRu || gated.summaryRu || '',
+    ...shapeLead(l),
+    confidence: shapeConfidence(l.confidence),
+    provenance: shapeProvenance(l.provenance),
+    warnings: l.warnings || [],
+    verbatim: l.verbatim || '',
+    aiSummary: l.aiSummary || '',
     sourceMessages: msgs,
-    confidence: normaliseConfidence(row.confidence ?? gated.confidence),
-    provenance: normaliseProvenance(row.provenance ?? gated.provenance),
-    journal: buildJournal(row, msgs),
+    needsAttachmentRetry: msgs.some((m) => m.attachmentPending),
+    journal: buildJournal(l, msgs),
     crm: {
-      state: row.status === 'failed' ? 'failed' : row.bitrixLeadId ? 'created' : 'pending',
-      bitrixLeadId: row.bitrixLeadId ?? null,
-      retryable: row.status === 'failed',
-      error: row.status === 'failed' ? 'The last CRM write did not complete.' : null,
+      state: statusKey(l) === 'failed' ? 'failed' : 'created',
+      bitrixLeadId: l.bitrixLeadId,
+      url: l.url,
     },
   };
 }
 
 /**
- * Derive a processing journal from what the service actually records.
- * Real per-stage timestamps are not stored, so entries are anchored to the
- * messages we do have rather than invented.
+ * A processing journal assembled from what is actually recorded — the source
+ * messages and the CRM outcome. Per-stage timings are not stored, so none are
+ * shown rather than being fabricated.
  */
-function buildJournal(row, msgs) {
+function buildJournal(l, msgs) {
   const entries = msgs.map((m) => ({
     ts: m.ts,
-    label: `${m.type === 'voice' ? 'Voice' : m.type === 'image' ? 'Attachment' : 'Text'} message received`,
-    detail: m.attachmentPending ? 'Attachment not yet retrievable — flagged for retry' : null,
+    label: `${m.type === 'voice' ? 'Voice' : m.type === 'image' ? 'Image' : 'Text'} message received`,
+    detail: m.attachmentPending ? 'Attachment not retrievable — flagged for retry' : null,
     tone: m.attachmentPending ? 'warn' : 'info',
   }));
-  const last = msgs.at(-1)?.ts;
-  if (row.bitrixLeadId) {
-    entries.push({ ts: last, label: `Lead created #${row.bitrixLeadId}`, detail: 'Written to Bitrix24', tone: 'ok' });
-  } else if (row.status === 'failed') {
-    entries.push({ ts: last, label: 'CRM sync failed', detail: 'Available for resend', tone: 'danger' });
+  if (l.bitrixLeadId) {
+    entries.push({
+      ts: l.createdAt,
+      label: `Lead created #${l.bitrixLeadId}`,
+      detail: l.owner ? `Owner: ${l.owner}` : null,
+      tone: 'ok',
+    });
   }
   return entries;
 }
 
-/* ── Leads ───────────────────────────────────────────────────────────────── */
+export async function getAnalytics() { return call('/api/crm/analytics'); }
+export async function getDuplicates() { return call('/api/crm/duplicates'); }
+export async function getAttention() { return call('/api/crm/attention'); }
+export async function getReference() { return call('/api/crm/reference'); }
+export async function getSystem()    { return call('/api/system'); }
 
-export async function getLeads() {
-  const rows = await live('/api/leads');
-  if (Array.isArray(rows) && rows.length) return ok(rows.map(normaliseListItem));
-  return demo(mock.LEADS);
-}
-
-export async function getLead(id) {
-  const row = await live(`/api/leads/${encodeURIComponent(id)}`);
-  if (row && row.id) return ok(normaliseDetail(row));
-  const found = mock.LEADS.find((l) => l.id === id);
-  return found ? demo(found) : demo(null);
-}
-
-/** Re-drive a failed lead through the pipeline. Returns {ok, message}. */
-export async function resendLead(id) {
-  const res = await live(`/api/leads/${encodeURIComponent(id)}/resend`, { method: 'POST' });
-  if (res) return { ok: true, message: 'Lead re-submitted to Bitrix24.', live: true };
-
-  // Demo mode: simulate the retry, then actually transition the fixture so the
-  // screen reflects the new state instead of snapping back to "failed".
-  await new Promise((r) => setTimeout(r, 900));
-  const lead = mock.LEADS.find((l) => l.id === id);
-  if (lead) {
-    const assignedId = lead.bitrixLeadId || 400 + mock.LEADS.indexOf(lead);
-    lead.status = 'created';
-    lead.bitrixLeadId = assignedId;
-    lead.crm = { state: 'created', bitrixLeadId: assignedId, lastAttempt: new Date().toISOString() };
-    lead.journal = [
-      ...(lead.journal || []),
-      { ts: new Date().toISOString(), label: `Lead created #${assignedId}`, detail: 'Retry succeeded', tone: 'ok' },
-    ];
-  }
-  return { ok: true, message: 'Lead successfully synchronised.', live: false };
-}
-
-/* ── Screens without a backend endpoint yet ──────────────────────────────── */
-
+/** Dashboard figures, derived from the portal's own leads. */
 export async function getDashboard() {
-  const leads = await getLeads();
-  if (leads.source === 'live') {
-    const rows = leads.data;
-    const created = rows.filter((l) => l.status === 'created').length;
-    const failed = rows.filter((l) => l.status === 'failed').length;
-    const processing = rows.filter((l) => l.status === 'processing').length;
-    return ok({
-      kpis: {
-        messages: rows.reduce((n, l) => n + Math.max(1, l.sourceMessages.length), 0),
-        leads: rows.length,
-        review: rows.filter((l) => l.needsAttachmentRetry).length,
-        errors: failed,
-        duplicates: null,
-        avgProcessingSec: null,
-        crmSuccess: rows.length ? created / rows.length : null,
-      },
-      pipeline: [
-        { key: 'messages', name: 'Messages', count: rows.length, note: 'ingested' },
-        { key: 'grouping', name: 'Grouping', count: 0, note: 'buffering' },
-        { key: 'extraction', name: 'Extraction', count: processing, note: 'in progress', active: processing > 0 },
-        { key: 'validation', name: 'Validation', count: 0, note: 'confidence gate' },
-        { key: 'resolution', name: 'Resolution', count: failed, note: 'needs attention' },
-        { key: 'crm', name: 'CRM Sync', count: created, note: 'synced', terminal: true },
-      ],
-      activity: rows.slice(0, 8).map((l) => ({
-        ts: l.createdAt,
-        tone: l.status === 'created' ? 'ok' : l.status === 'failed' ? 'danger' : 'info',
-        title: [l.person.name, l.company].filter(Boolean).join(' / '),
-        note: l.status === 'created' ? 'Lead created' : l.status === 'failed' ? 'CRM sync failed' : 'Processing',
-        state: l.bitrixLeadId ? `Bitrix #${l.bitrixLeadId}` : l.status === 'failed' ? 'Retryable' : 'Processing',
-      })),
-    });
-  }
-  return demo({ kpis: mock.KPIS, pipeline: mock.PIPELINE, activity: mock.ACTIVITY });
+  const [leads, attention] = await Promise.all([getLeads(), getAttention()]);
+  const created = leads.filter((l) => l.status === 'created').length;
+  const failed = leads.filter((l) => l.status === 'failed').length;
+  const fromPipeline = leads.filter((l) => l.fromPipeline).length;
+
+  return {
+    kpis: {
+      leads: leads.length,
+      fromPipeline,
+      review: attention.length,
+      errors: failed,
+      created,
+      manual: leads.length - fromPipeline,
+    },
+    pipeline: [
+      { key: 'messages', name: 'Messages', count: null, note: 'ingested from Teams' },
+      { key: 'grouping', name: 'Grouping', count: null, note: 'per author' },
+      { key: 'extraction', name: 'Extraction', count: null, note: 'fields + confidence' },
+      { key: 'validation', name: 'Validation', count: null, note: 'confidence gate' },
+      { key: 'resolution', name: 'Review', count: attention.length, note: 'needs attention', active: attention.length > 0 },
+      { key: 'crm', name: 'In Bitrix24', count: leads.length, note: 'leads', terminal: true },
+    ],
+    activity: leads.slice(0, 8).map((l) => ({
+      ts: l.createdAt,
+      tone: l.status === 'failed' ? 'danger' : l.status === 'created' ? 'ok' : 'info',
+      title: [l.person.name, l.company].filter(Boolean).join(' / ') || l.statusLabel,
+      note: l.fromPipeline ? 'Created from Teams' : 'Entered directly in Bitrix24',
+      state: `#${l.bitrixLeadId}`,
+    })),
+    leads,
+  };
 }
 
-export async function getUnresolved() { return demo(mock.UNRESOLVED); }
-export async function getDuplicates() { return demo(mock.DUPLICATES); }
-export async function getAnalytics()  { return demo(mock.ANALYTICS); }
-export async function getHealth()     { return demo(mock.HEALTH); }
-export async function getCampaign()   { return demo(mock.CAMPAIGN); }
-export async function getChannels()   { return demo(mock.CHANNELS); }
-export async function getUsers()      { return demo(mock.USERS); }
-export async function getIntegrations() { return demo(mock.INTEGRATIONS); }
+/** Re-drive a failed lead's session through the pipeline. */
+export async function resendLead(localId) {
+  const secret = getSecret();
+  const res = await fetch(`/api/leads/${encodeURIComponent(localId)}/resend`, {
+    method: 'POST',
+    headers: { 'x-api-secret': secret },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    return {
+      ok: false,
+      message: body.error === 'lead is not in failed state'
+        ? 'This lead is not in a failed state.'
+        : 'The resend could not be started.',
+    };
+  }
+  return { ok: true, message: 'Lead re-submitted for processing.' };
+}
 
 /** Field labels used by the lead detail + evidence panel. */
 export const FIELD_LABELS = {
@@ -315,7 +288,7 @@ export const FIELD_LABELS = {
   position: 'Position',
   phone: 'Phone',
   email: 'Email',
-  country: 'Country',
+  country: 'Region',
   productInterest: 'Product interest',
   priority: 'Priority',
 };

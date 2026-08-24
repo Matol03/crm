@@ -1,76 +1,63 @@
 /**
- * Teams channel mapping (admin only):  channel → campaign → CRM configuration.
+ * Teams channel (admin) — which channel the service is actually polling, and
+ * how far through it has read.
+ *
+ * There is one configured channel; this reports its real state rather than
+ * presenting a list of channels the service does not watch.
  */
 
-import { h, replace, fmtAgo, fmtNum } from '../../ui/dom.js';
-import { panel, badge, toast, emptyState } from '../../ui/primitives.js';
-import { getChannels, getCampaign } from '../../api.js';
+import { h, replace, fmtDateTime, fmtNum } from '../../ui/dom.js';
+import { panel, badge, apiErrorState, banner } from '../../ui/primitives.js';
+import { getSystem } from '../../api.js';
 
 export async function renderChannels(root) {
-  const [{ data: channels }, { data: campaign }] = await Promise.all([getChannels(), getCampaign()]);
+  let sys;
+  try {
+    sys = await getSystem();
+  } catch (err) {
+    replace(root, apiErrorState(err, () => renderChannels(root)));
+    return;
+  }
 
-  const row = (ch) => {
-    let active = ch.active;
-    const sw = h('button.switch' + (active ? '.is-on' : ''), {
-      role: 'switch', 'aria-checked': String(active), 'aria-label': `${ch.channel} active`,
-      onclick: () => {
-        active = !active;
-        sw.classList.toggle('is-on', active);
-        sw.setAttribute('aria-checked', String(active));
-        state.replaceChildren(active ? badge('Active', 'ok') : badge('Paused', 'neutral'));
-        toast(`${ch.channel} ${active ? 'resumed' : 'paused'}`);
-      },
-    });
-    const state = h('span', active ? badge('Active', 'ok') : badge('Paused', 'neutral'));
-
-    return h('div.health-row',
-      h('div.grow',
-        h('div.row', { style: { gap: 'var(--sp-2)' } },
-          h('span.fw-medium.mono', ch.channel),
-          state),
-        h('div.t-xs.subtle', { style: { marginTop: '2px' } },
-          `${ch.team} → ${ch.campaign}`)),
-      h('div.t-xs.subtle', { style: { textAlign: 'right', minWidth: '140px' } },
-        h('div', `${fmtNum(ch.messages)} messages`),
-        h('div', ch.lastMessageAt ? `last ${fmtAgo(ch.lastMessageAt)}` : 'no messages yet')),
-      sw,
-    );
-  };
+  const ch = sys.channel || {};
+  const live = sys.modes?.msgraph === 'live';
 
   replace(root,
     h('div.page-head',
       h('div',
-        h('h1.page-title', 'Teams channels'),
-        h('p.page-subtitle', 'Each channel feeds one campaign and its CRM configuration')),
-      h('div.row',
-        h('button.btn.btn-primary', { onclick: () => toast('Channel mapping is configured by an administrator') },
-          'Add channel'))),
+        h('h1.page-title', 'Teams channel'),
+        h('p.page-subtitle', 'The source this service ingests from'))),
 
     panel({
-      title: 'Mapped channels',
-      subtitle: `Messages posted in these channels become leads in ${campaign.exhibition}`,
-      flush: true,
-      body: channels.length
-        ? h('div', channels.map(row))
-        : emptyState({ title: 'No channels mapped', note: 'Map a Teams channel to start ingesting messages.' }),
+      title: 'Configured channel',
+      actions: [live ? badge('Polling', 'ok') : badge('Not polling', 'neutral')],
+      body: h('dl.dl',
+        h('dt', 'Team id'), h('dd.mono.t-xs', ch.teamsGroupId || '—'),
+        h('dt', 'Channel id'), h('dd.mono.t-xs', ch.channelId || '—'),
+        h('dt', 'Poll interval'),
+        h('dd', sys.tuning?.pollIntervalMs ? `${Math.round(sys.tuning.pollIntervalMs / 1000)} s` : '—'),
+        h('dt', 'Read up to'),
+        h('dd', sys.watermark ? fmtDateTime(sys.watermark) : 'nothing read yet')),
     }),
 
     h('div', { style: { marginTop: 'var(--sp-4)' } },
       panel({
-        title: 'How mapping works',
+        title: 'Processing so far',
         body: h('div.grid.grid-3',
-          h('div',
-            h('div.eyebrow', 'Teams channel'),
-            h('p.t-sm.muted', { style: { marginTop: '6px' } },
-              'Managers post free-form text, photos and voice notes. Nothing about their workflow changes.')),
-          h('div',
-            h('div.eyebrow', 'Campaign'),
-            h('p.t-sm.muted', { style: { marginTop: '6px' } },
-              'Fixes the exhibition and source stamped on every lead created from that channel.')),
-          h('div',
-            h('div.eyebrow', 'CRM configuration'),
-            h('p.t-sm.muted', { style: { marginTop: '6px' } },
-              'Determines the Bitrix24 pipeline, default owner and reference lists used for mapping.'))),
+          h('div', h('div.t-xs.subtle', 'Leads processed'),
+            h('div.metric-value.sm', fmtNum(sys.queues?.processed ?? 0))),
+          h('div', h('div.t-xs.subtle', 'Failed'),
+            h('div.metric-value.sm', fmtNum(sys.queues?.failed ?? 0))),
+          h('div', h('div.t-xs.subtle', 'Awaiting attachment'),
+            h('div.metric-value.sm', fmtNum(sys.queues?.needsAttachmentRetry ?? 0)))),
       })),
+
+    h('div', { style: { marginTop: 'var(--sp-4)' } },
+      banner('info',
+        h('div',
+          h('div.fw-medium', 'How the mapping works'),
+          h('div.t-xs', { style: { marginTop: '2px' } },
+            'Messages posted in this channel become leads stamped with the campaign’s exhibition and source. '
+            + 'The manager who posted owns the lead. Changing the channel is a service configuration change.')))),
   );
 }

@@ -12,7 +12,7 @@
 import { h, icon, replace, fmtTime, fmtDateTime, humanize } from '../ui/dom.js';
 import {
   panel, statusBadge, badge, confidence, lowConfidenceFlag,
-  skeleton, errorState, banner, toast,
+  skeleton, errorState, apiErrorState, banner, toast,
 } from '../ui/primitives.js';
 import { getLead, resendLead, FIELD_LABELS } from '../api.js';
 import { navigate } from '../router.js';
@@ -43,24 +43,21 @@ function fieldRows(lead) {
 export async function renderLeadDetail(root, id) {
   replace(root, h('div.stack-4', skeleton(2), panel({ body: skeleton(6) })));
 
-  let result;
+  let lead;
   try {
-    result = await getLead(id);
-  } catch {
-    result = { data: null };
+    lead = await getLead(id);
+  } catch (err) {
+    replace(root, apiErrorState(err, () => navigate('leads')));
+    return;
   }
-  const lead = result?.data;
-
   if (!lead) {
     replace(root, errorState({
       title: 'Lead not found',
-      note: 'It may have been merged into another lead, or the identifier is out of date.',
+      note: 'It may have been deleted in Bitrix24, or the identifier is out of date.',
       retry: () => navigate('leads'),
     }));
     return;
   }
-
-  const isDemo = result.source === 'demo';
   /** Currently selected field key — drives the evidence highlight. */
   let selected = null;
 
@@ -201,7 +198,7 @@ export async function renderLeadDetail(root, id) {
           h('div', isEmpty
             ? h('span.t-xs.faint', '—')
             : score == null
-              ? h('span.t-xs.faint', isDemo ? '—' : 'not recorded')
+              ? h('span.t-xs.faint', lead.fromPipeline ? 'not recorded' : '—')
               : confidence(score)),
         );
       }),
@@ -224,17 +221,22 @@ export async function renderLeadDetail(root, id) {
   function crmSection() {
     const crm = lead.crm || {};
     if (crm.state === 'created') {
-      return banner('ok',
-        h('div.fw-medium', `Created in Bitrix24 · Lead #${crm.bitrixLeadId}`),
-        h('div.t-xs', { style: { marginTop: '2px' } },
-          `Owner ${lead.owner?.name || '—'}${crm.lastAttempt ? ` · synced ${fmtDateTime(crm.lastAttempt)}` : ''}`));
+      return h('div.banner.banner-ok',
+        icon('check', 15),
+        h('div.grow',
+          h('div.fw-medium', `In Bitrix24 · Lead #${crm.bitrixLeadId}`),
+          h('div.t-xs', { style: { marginTop: '2px' } },
+            `Owner ${lead.owner?.name || '—'} · ${lead.statusLabel || ''}`,
+            lead.fromPipeline ? ' · created from Teams' : ' · entered directly in Bitrix24')),
+        crm.url && h('a.btn.btn-sm', { href: crm.url, target: '_blank', rel: 'noopener' },
+          'Open in Bitrix', icon('external', 12)));
     }
     if (crm.state === 'failed') {
       const btn = h('button.btn.btn-primary.btn-sm', {
         onclick: async () => {
           btn.disabled = true;
           replace(btn, h('span.spinner'), 'Retrying…');
-          const res = await resendLead(lead.id);
+          const res = await resendLead(lead.localId ?? lead.id);
           if (res.ok) {
             toast(res.message, 'ok');
             renderLeadDetail(root, id);
@@ -311,9 +313,9 @@ export async function renderLeadDetail(root, id) {
         h('p.page-subtitle',
           [lead.company, lead.person?.position].filter(Boolean).join(' · ') || 'No company recorded'),
         h('div.row.wrap', { style: { marginTop: 'var(--sp-3)', gap: 'var(--sp-2)' } },
-          lead.leadType && badge(humanize(lead.leadType), lead.leadType === 'partner' ? 'purple' : 'neutral', { large: true }),
+          lead.leadType && badge(lead.leadType, /partner/i.test(lead.leadType) ? 'purple' : 'neutral', { large: true }),
           lead.priority && badge(`${lead.priority} priority`, PRIORITY_TONE[lead.priority] || 'neutral', { large: true }),
-          statusBadge(lead.status, { large: true }),
+          statusBadge(lead.status, { large: true, label: lead.statusLabel }),
           lead.bitrixLeadId && badge(`CRM #${lead.bitrixLeadId}`, 'ok', { large: true }),
           lead.needsAttachmentRetry && badge('Attachment pending', 'warn', { large: true }))),
       h('div', { style: { minWidth: '220px' } },
@@ -321,6 +323,14 @@ export async function renderLeadDetail(root, id) {
         overall == null
           ? h('div.t-sm.faint', 'Not recorded by the service')
           : confidence(overall, { size: 'lg' }))),
+
+    !lead.fromPipeline
+      ? h('div', { style: { marginBottom: 'var(--sp-4)' } },
+          banner('info',
+            h('div.fw-medium', 'This lead was not created by the pipeline'),
+            h('div.t-xs', { style: { marginTop: '2px' } },
+              'It was entered directly in Bitrix24, so there are no source messages, confidence scores or evidence to show.')))
+      : null,
 
     lead.warnings?.length
       ? h('div', { style: { marginBottom: 'var(--sp-4)' } },

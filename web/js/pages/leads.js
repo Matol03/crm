@@ -7,7 +7,7 @@
  */
 
 import { h, icon, replace, fmtDateTime, humanize } from '../ui/dom.js';
-import { panel, statusBadge, badge, confidence, emptyState } from '../ui/primitives.js';
+import { panel, statusBadge, badge, confidence, apiErrorState } from '../ui/primitives.js';
 import { createTable } from '../ui/table.js';
 import { getLeads } from '../api.js';
 import { navigate } from '../router.js';
@@ -32,9 +32,13 @@ export async function renderLeads(root, route) {
     since: '',
   };
 
-  const result = await getLeads();
-  const all = result.data;
-  const isDemo = result.source === 'demo';
+  let all;
+  try {
+    all = await getLeads();
+  } catch (err) {
+    replace(root, apiErrorState(err, () => renderLeads(root, route)));
+    return;
+  }
 
   const owners = [...new Set(all.map((l) => l.owner?.name).filter(Boolean))].sort();
 
@@ -101,7 +105,11 @@ export async function renderLeads(root, route) {
           ? h('span.faint.t-xs', 'not recorded')
           : confidence(l.confidence.overall),
       },
-      { key: 'status', label: 'Status', sortable: true, render: (l) => statusBadge(l.status) },
+      {
+        key: 'statusLabel', label: 'Status', sortable: true,
+        // The label is whatever the portal calls it; the tone comes from the key.
+        render: (l) => statusBadge(l.status, { label: l.statusLabel }),
+      },
       {
         key: 'createdAt', label: 'Created', sortable: true,
         value: (l) => new Date(l.createdAt).getTime(),
@@ -162,8 +170,8 @@ export async function renderLeads(root, route) {
   const selects = {
     status: h('select.select', {
       onchange: (e) => { filters.status = e.target.value; apply(); },
-    }, ...[['', 'All statuses'], ['created', 'Created'], ['processing', 'Processing'],
-        ['needs_review', 'Needs review'], ['failed', 'Failed'], ['duplicate', 'Duplicate']]
+    }, ...[['', 'All statuses'], ['new', 'Unprocessed'], ['processing', 'In progress'],
+        ['created', 'Qualified'], ['failed', 'Unqualified']]
       .map(([v, l]) => h('option', { value: v, selected: filters.status === v || null }, l))),
     priority: h('select.select', {
       onchange: (e) => { filters.priority = e.target.value; apply(); },
@@ -171,7 +179,7 @@ export async function renderLeads(root, route) {
       .map(([v, l]) => h('option', { value: v }, l))),
     leadType: h('select.select', {
       onchange: (e) => { filters.leadType = e.target.value; apply(); },
-    }, ...[['', 'Any type'], ['customer', 'Customer'], ['partner', 'Partner']]
+    }, ...[['', 'Any type'], ['Customer', 'Customer'], ['Partner', 'Partner']]
       .map(([v, l]) => h('option', { value: v }, l))),
     owner: h('select.select', {
       onchange: (e) => { filters.owner = e.target.value; apply(); },
@@ -200,9 +208,7 @@ export async function renderLeads(root, route) {
     h('div.page-head',
       h('div',
         h('h1.page-title', 'Leads'),
-        h('p.page-subtitle',
-          'Every contact extracted from Teams, with the confidence behind it',
-          isDemo ? ' · demo fixtures' : ' · live data')),
+        h('p.page-subtitle', 'Live from Bitrix24 — click a lead to see its evidence')),
       h('div.row', countLabel)),
 
     panel({
