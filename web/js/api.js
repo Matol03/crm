@@ -57,6 +57,16 @@ async function call(path) {
     const body = await res.json().catch(() => ({}));
     throw new ApiError(body.message || 'No Bitrix24 connection is configured.', { kind: 'crm' });
   }
+  if (res.status === 404) {
+    // The page loaded but the API route does not exist — this is a static-only
+    // deployment (e.g. Vercel), which cannot run the poller or reach Bitrix24.
+    connection.live = false;
+    connection.reason = 'No service behind this page';
+    throw new ApiError(
+      'This page is being served without the lead service behind it, so there is no data to read.',
+      { kind: 'no-service' },
+    );
+  }
   if (!res.ok) {
     connection.reason = `API ${res.status}`;
     throw new ApiError(`The service returned an unexpected response (${res.status}).`);

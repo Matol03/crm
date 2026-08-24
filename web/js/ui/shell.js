@@ -13,12 +13,12 @@ const MAIN_NAV = [
   { route: 'dashboard',  label: 'Dashboard',  icon: 'dashboard' },
   { route: 'leads',      label: 'Leads',      icon: 'leads', children: [
       { route: 'leads', query: '', label: 'All' },
-      { route: 'leads', query: 'status=needs_review', label: 'Needs review' },
-      { route: 'leads', query: 'status=failed', label: 'Failed' },
-      { route: 'leads', query: 'status=created', label: 'Synced' },
+      { route: 'leads', query: 'status=new', label: 'Unprocessed' },
+      { route: 'leads', query: 'status=processing', label: 'In progress' },
+      { route: 'leads', query: 'status=created', label: 'Qualified' },
     ] },
-  { route: 'unresolved', label: 'Unresolved', icon: 'unresolved', badge: 3 },
-  { route: 'duplicates', label: 'Duplicates', icon: 'duplicates', badge: 2 },
+  { route: 'unresolved', label: 'Needs attention', icon: 'unresolved' },
+  { route: 'duplicates', label: 'Duplicates', icon: 'duplicates' },
   { route: 'analytics',  label: 'Analytics',  icon: 'analytics' },
 ];
 
@@ -81,23 +81,23 @@ export function renderConnection() {
   replace(statusEl,
     h(`span.badge.badge-${live ? 'ok' : 'neutral'}`,
       h('span.dot' + (live ? '.live' : '')),
-      live ? 'Live processing' : 'Demo data'),
+      live ? 'Live data' : 'Not connected'),
   );
   statusEl.title = live
-    ? 'Connected to the lead-service API'
-    : `Showing fixtures — ${connection.reason || 'no API secret set'}`;
+    ? 'Reading live data from Bitrix24 through the lead service'
+    : `Not reading data — ${connection.reason || 'no API secret set'}`;
 }
 
 /** Prompt for the API secret so the UI can switch to live data. */
 function openConnectionDrawer() {
   let input;
   openDrawer({
-    title: 'Data source',
-    subtitle: 'Connect this interface to the running lead-service',
+    title: 'Connect to the lead service',
+    subtitle: 'The console reads Bitrix24 through the service',
     body: h('div.stack-4',
       h('p.t-sm.muted',
-        'Without a secret the interface shows realistic demo fixtures so it can be explored offline. ',
-        'Enter the API shared secret to read leads from the live service instead.'),
+        'This console has no data of its own. It reads leads from Bitrix24 and the AI metadata ',
+        'from the service’s database, so it needs the service’s API secret.'),
       h('div',
         h('label.field-label', { for: 'api-secret' }, 'API shared secret'),
         (input = h('input.input#api-secret', {
@@ -105,17 +105,18 @@ function openConnectionDrawer() {
           autocomplete: 'off', spellcheck: 'false',
         }))),
       h('div.banner.banner-info',
-        h('div', h('div.fw-medium', 'What changes when connected'),
+        h('div', h('div.fw-medium', 'Where the data comes from'),
           h('div.t-xs', { style: { marginTop: '2px' } },
-            'Leads, statuses, source messages, verbatim text and AI summaries come from the service. ',
-            'Per-field confidence and provenance are not recorded by the backend yet, so those appear as “not recorded”.'))),
+            'Leads, statuses, owners and list values come from Bitrix24. Per-field confidence, ',
+            'provenance and the original Teams messages come from the service that created them. ',
+            'A lead entered by hand in Bitrix has no AI metadata and is labelled as such.'))),
     ),
     footer: (close) => [
       h('button.btn.btn-primary', {
         onclick: async () => {
           setSecret(input.value.trim());
           close();
-          toast(input.value.trim() ? 'Reconnecting…' : 'Switched to demo data');
+          toast(input.value.trim() ? 'Reconnecting…' : 'Disconnected');
           const { checkConnection } = await import('../api.js');
           await checkConnection();
           renderConnection();
@@ -123,7 +124,9 @@ function openConnectionDrawer() {
           resolve();
         },
       }, 'Save'),
-      h('button.btn', { onclick: (e) => { setSecret(''); e.target.closest('.drawer') && null; close(); toast('Switched to demo data'); renderConnection(); } }, 'Use demo data'),
+      h('button.btn', {
+        onclick: () => { setSecret(''); close(); toast('Disconnected'); renderConnection(); },
+      }, 'Disconnect'),
     ],
   });
 }

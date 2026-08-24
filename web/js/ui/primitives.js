@@ -160,7 +160,15 @@ export function apiErrorState(err, retry) {
   if (kind === 'auth') {
     return emptyState({
       title: 'Connect to the lead service',
-      note: 'This console reads live data from Bitrix24 through the service. Enter the API secret using the “Demo data / Live” control in the header to begin.',
+      note: 'This console reads live data from Bitrix24 through the service. Use the “Not connected” control in the header to enter the API secret.',
+    });
+  }
+  if (kind === 'no-service') {
+    return emptyState({
+      title: 'No lead service behind this page',
+      note: 'This is a static copy of the console. The service that polls Teams and reads Bitrix24 '
+        + 'is a long-running process with its own database, so it cannot run on static hosting. '
+        + 'Open the console from the machine running the service to see live data.',
     });
   }
   if (kind === 'crm') {

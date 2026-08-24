@@ -80,5 +80,5 @@ subscribe(() => renderSidebar());
 
 start();
 
-// Probe the service so the header reflects live vs demo data.
+// Probe the service so the header reflects whether live data is flowing.
 checkConnection().then(renderConnection);
