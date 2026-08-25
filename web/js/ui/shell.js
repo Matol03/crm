@@ -111,12 +111,17 @@ function renderSampleBanner() {
     ? host.previousElementSibling : null;
   if (dataSource.mode !== 'sample') { existing?.remove(); return; }
   if (existing) return;
+  // Name the actual situation. "No service at this address" is a different
+  // problem from a rejected secret, and needs a different action from the reader.
+  const absent = connection.service === 'absent';
   const strip = h('div.banner.banner-warn.sample-strip', { style: { margin: '0 0 var(--sp-5)' } },
     icon('alert', 15),
     h('div.grow',
-      h('div.fw-medium', 'Showing sample data'),
+      h('div.fw-medium', absent ? 'Demonstration only — no lead service here' : 'Showing sample data'),
       h('div.t-xs', { style: { marginTop: '2px' } },
-        `${dataSource.reason} Nothing on this screen reflects your real leads.`)));
+        absent
+          ? 'This address serves the interface but has no service behind it, so every figure below is invented sample content. Open the console where the service runs to see real leads.'
+          : `${dataSource.reason} Nothing on this screen reflects your real leads.`)));
   host.parentElement?.insertBefore(strip, host);
 }
 
@@ -131,28 +136,49 @@ function openConnectionDrawer() {
       h('div.banner.banner-warn', h('div', h('div.fw-medium', 'Not connected'),
         h('div.t-xs', { style: { marginTop: '2px' } }, msg))));
   };
+  // A static copy of the console (no service behind it) cannot be connected by
+  // any secret. Say so, rather than presenting a field that cannot work.
+  const noService = connection.service === 'absent';
+
   openDrawer({
-    title: 'Connect to the lead service',
-    subtitle: 'The console reads leads through the service',
+    title: noService ? 'No lead service at this address' : 'Connect to the lead service',
+    subtitle: noService
+      ? 'This page is a copy of the interface only'
+      : 'The console reads leads through the service',
     body: h('div.stack-4',
-      h('p.t-sm.muted',
-        'This console has no data of its own. It reads leads and the AI metadata from the ',
-        'service’s database, so it needs the service’s API secret.'),
+      noService
+        ? h('div.stack-3',
+            h('p.t-sm.muted',
+              'This address serves the console’s files but has no lead service behind them, ',
+              'so there is nothing here to read leads from. An API secret will not change ',
+              'that — do not paste one into this page.'),
+            h('div.banner.banner-info',
+              h('div', h('div.fw-medium', 'Where the working console lives'),
+                h('div.t-xs', { style: { marginTop: '2px' } },
+                  'Open it on the machine running the service — by default ',
+                  h('span.mono', 'http://localhost:4318'),
+                  '. To use it from anywhere, the service itself has to be hosted somewhere ',
+                  'reachable; hosting only these files is not enough.'))))
+        : h('p.t-sm.muted',
+            'This console has no data of its own. It reads leads and the AI metadata from the ',
+            'service’s database, so it needs the service’s API secret.'),
       (errorSlot = h('div')),
-      h('div',
+      !noService && h('div',
         h('label.field-label', { for: 'api-secret' }, 'API shared secret'),
         (input = h('input.input#api-secret', {
           type: 'password', value: getSecret(), placeholder: 'API_SHARED_SECRET',
           autocomplete: 'off', spellcheck: 'false',
         }))),
-      h('div.banner.banner-info',
+      !noService && h('div.banner.banner-info',
         h('div', h('div.fw-medium', 'Where to find the secret'),
           h('div.t-xs', { style: { marginTop: '2px' } },
             'It is the API_SHARED_SECRET value in the service’s .env file. Copy the value only — ',
             'not the name, the equals sign, or any quotes. It is kept for this browser tab only ',
             'and is never put in the address bar.'))),
     ),
-    footer: (close) => [
+    footer: (close) => noService ? [
+      h('button.btn.btn-primary', { onclick: () => close() }, 'Close'),
+    ] : [
       h('button.btn.btn-primary', {
         onclick: async (ev) => {
           const value = input.value.trim();

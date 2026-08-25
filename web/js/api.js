@@ -28,8 +28,17 @@ export const setSecret = (v) => {
   else sessionStorage.removeItem(SECRET_KEY);
 };
 
-/** Reflects the last call, for the header indicator. */
-export const connection = { live: false, checked: false, reason: '' };
+/**
+ * Reflects the last call, for the header indicator.
+ *
+ * `service` distinguishes three very different situations that all used to read
+ * as "unreachable":
+ *   'present'     — a lead service is answering at this address
+ *   'absent'      — the host serves the files but has no service behind them
+ *                   (a static copy, e.g. on Vercel); no secret can ever work
+ *   'unreachable' — nothing answered at all (offline, or the service is down)
+ */
+export const connection = { live: false, checked: false, reason: '', service: 'unknown' };
 
 /** Thrown for any condition a screen should explain rather than crash on. */
 export class ApiError extends Error {
@@ -88,13 +97,24 @@ export async function checkConnection() {
   try {
     const res = await fetch('/health');
     connection.checked = true;
-    if (!res.ok) { connection.live = false; connection.reason = 'Service unreachable'; return false; }
+    if (!res.ok) {
+      // The host answered, but there is no service here. Asking for a secret
+      // would be pointless: there is nothing for it to authenticate against.
+      connection.live = false;
+      connection.service = 'absent';
+      connection.reason = 'No lead service at this address';
+      return false;
+    }
+    connection.service = 'present';
     if (!getSecret()) { connection.live = false; connection.reason = 'No API secret'; return false; }
     // Confirm the secret actually works and the portal is reachable.
     await call('/api/crm/reference');
     return true;
   } catch {
     connection.checked = true;
+    if (connection.service !== 'present') {
+      connection.service = connection.service === 'absent' ? 'absent' : 'unreachable';
+    }
     return false;
   }
 }
