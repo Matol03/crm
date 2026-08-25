@@ -73,9 +73,12 @@ export async function renderLeads(root, route) {
           h('div.cell-primary.truncate', { style: { display: 'flex', alignItems: 'center', gap: '6px' } },
             h('span.truncate', l.person?.name || 'Unnamed'),
             l.sameName?.count > 0 && badge(
-              l.sameName.count === 1 ? 'Duplicate' : `${l.sameName.count} duplicates`,
+              l.sameName.kind === 'partial' ? 'Possible duplicate'
+                : l.sameName.count === 1 ? 'Duplicate' : `${l.sameName.count} duplicates`,
               'warn',
-              { title: `Same name as lead #${l.sameName.ids.join(', #')}` })),
+              { title: l.sameName.kind === 'partial'
+                  ? `This name is contained in lead #${l.sameName.ids.join(', #')} — it may be the same person captured twice`
+                  : `Same name as lead #${l.sameName.ids.join(', #')}` })),
           l.person?.position && h('div.cell-secondary.truncate', l.person.position)),
       },
       {

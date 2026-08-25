@@ -159,7 +159,7 @@ function shapeLead(l) {
     person: { name: l.name, position: l.position },
     // Other leads carrying the same name — surfaced in the list so a possible
     // duplicate is visible without opening the Duplicates screen.
-    sameName: { count: l.sameNameCount || 0, ids: l.sameNameIds || [] },
+    sameName: { count: l.sameNameCount || 0, ids: l.sameNameIds || [], kind: l.sameNameKind || 'same' },
     company: l.company,
     country: l.region,
     region: l.region,

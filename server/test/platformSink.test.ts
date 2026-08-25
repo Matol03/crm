@@ -261,3 +261,49 @@ describe('lead status journey', () => {
     db.close();
   });
 });
+
+describe('name duplicate detection', () => {
+  const named = (localId: string, name: string, phone: string) =>
+    write({ localId, sessionId: localId, name, phones: [{ value: phone, type: 'WORK' }], emails: [] });
+
+  it('catches a partial name capture of the same person', async () => {
+    // The real case: one message gave only a first name, a later one the full
+    // name. Exact matching misses this entirely.
+    const db = freshDb();
+    const store = new PlatformLeadStore({ db });
+    await store.writeLeads([named('a', 'MARIA OLIVIA', '+7 111 0001')]);
+    await store.writeLeads([named('b', 'Maria', '+7 111 0002')]);
+
+    const leads = await new PlatformRepo({ db }).leads();
+    const flags = leads.map((l) => l as unknown as { sameNameCount: number; sameNameKind: string });
+    expect(flags.every((f) => f.sameNameCount === 1)).toBe(true);
+    // Reported as a possibility, not asserted as a certainty.
+    expect(flags.every((f) => f.sameNameKind === 'partial')).toBe(true);
+    db.close();
+  });
+
+  it('catches the same name written in the other order', async () => {
+    const db = freshDb();
+    const store = new PlatformLeadStore({ db });
+    await store.writeLeads([named('a', 'Aleksandr Petrov', '+7 222 0001')]);
+    await store.writeLeads([named('b', 'Petrov Aleksandr', '+7 222 0002')]);
+
+    const leads = await new PlatformRepo({ db }).leads();
+    const flags = leads.map((l) => l as unknown as { sameNameCount: number; sameNameKind: string });
+    expect(flags.every((f) => f.sameNameCount === 1 && f.sameNameKind === 'same')).toBe(true);
+    db.close();
+  });
+
+  it('does not flag two people who merely share a first name', async () => {
+    const db = freshDb();
+    const store = new PlatformLeadStore({ db });
+    await store.writeLeads([named('a', 'John Newman', '+7 333 0001')]);
+    await store.writeLeads([named('b', 'John Stewart', '+7 333 0002')]);
+
+    const leads = await new PlatformRepo({ db }).leads();
+    for (const l of leads) {
+      expect((l as unknown as { sameNameCount: number }).sameNameCount).toBe(0);
+    }
+    db.close();
+  });
+});

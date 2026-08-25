@@ -148,7 +148,8 @@ export class PlatformRepo {
         const a = all[i]!, b = all[j]!;
         const phone = overlap(a.phones.map(onlyDigits), b.phones.map(onlyDigits));
         const email = overlap(a.emails.map(lower), b.emails.map(lower));
-        const name = a.name && b.name && lower(a.name) === lower(b.name);
+        const nameMatch = compareNames(a.name, b.name);
+        const name = nameMatch != null;
         const company = a.company && b.company && lower(a.company) === lower(b.company);
         // A shared name alone is worth surfacing: two reps meeting the same
         // person often capture different contact details, so there is nothing
@@ -158,7 +159,7 @@ export class PlatformRepo {
         const signals = [
           { label: 'Phone', match: phone },
           { label: 'Email', match: email },
-          { label: 'Name', match: !!name },
+          { label: nameMatch === 'partial' ? 'Name (partial)' : 'Name', match: !!name },
           { label: 'Company', match: !!company },
         ];
         const hits = signals.filter((s) => s.match).length;
@@ -319,22 +320,57 @@ function parseArr(json: string): string[] {
 }
 
 /**
- * Flag leads that share a name with another lead, so the list can mark them
+ * Compare names for a duplicate check.
+ *
+ * Exact matching is not enough in practice: the same person is often captured
+ * twice at different levels of detail ("Maria" then "MARIA OLIVIA"), or with the
+ * name parts in the other order. Tokens shorter than three characters are
+ * ignored so initials and particles do not create matches on their own.
+ */
+function nameTokens(name: string | null): Set<string> {
+  return new Set(
+    (name ?? '')
+      .toLowerCase()
+      .replace(/[^\p{L}\s]/gu, ' ')
+      .split(/\s+/)
+      .filter((t) => t.length > 2),
+  );
+}
+
+const isSubset = (a: Set<string>, b: Set<string>) => [...a].every((t) => b.has(t));
+const sameSet = (a: Set<string>, b: Set<string>) => a.size === b.size && isSubset(a, b);
+
+/** 'exact' and 'reordered' are the same name; 'partial' is one contained in the other. */
+export type NameMatchKind = 'exact' | 'reordered' | 'partial';
+
+function compareNames(a: string | null, b: string | null): NameMatchKind | null {
+  if (!a || !b) return null;
+  const ta = nameTokens(a);
+  const tb = nameTokens(b);
+  if (!ta.size || !tb.size) return null;
+  if (a.trim().toLowerCase() === b.trim().toLowerCase()) return 'exact';
+  if (sameSet(ta, tb)) return 'reordered';
+  if (isSubset(ta, tb) || isSubset(tb, ta)) return 'partial';
+  return null;
+}
+
+/**
+ * Flag leads whose name matches another lead's, so the list can mark them
  * without the reader having to open the Duplicates screen to find out.
  */
 function markSameName(leads: ConsoleLead[]): ConsoleLead[] {
-  const byName = new Map<string, number[]>();
   for (const l of leads) {
-    if (!l.name) continue;
-    const key = l.name.trim().toLowerCase();
-    byName.set(key, [...(byName.get(key) ?? []), l.bitrixLeadId]);
-  }
-  for (const l of leads) {
-    const ids = l.name ? byName.get(l.name.trim().toLowerCase()) ?? [] : [];
-    const others = ids.filter((id) => id !== l.bitrixLeadId);
+    const matches = leads
+      .filter((o) => o.bitrixLeadId !== l.bitrixLeadId)
+      .map((o) => ({ id: o.bitrixLeadId, kind: compareNames(l.name, o.name) }))
+      .filter((m): m is { id: number; kind: NameMatchKind } => m.kind != null);
+
     Object.assign(l, {
-      sameNameCount: others.length,
-      sameNameIds: others,
+      sameNameCount: matches.length,
+      sameNameIds: matches.map((m) => m.id),
+      // 'partial' is a weaker signal than an identical name, and the console
+      // labels it differently so a hint is not presented as a certainty.
+      sameNameKind: matches.some((m) => m.kind !== 'partial') ? 'same' : 'partial',
     });
   }
   return leads;

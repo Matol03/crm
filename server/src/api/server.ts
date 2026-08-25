@@ -90,10 +90,16 @@ function serveStatic(res: ServerResponse, pathname: string): boolean {
     return false;
   }
   const ext = extname(target).toLowerCase();
+  // The app ships as raw ES modules with no build step and no content hashes in
+  // filenames, so a cached module is indistinguishable from a current one. With
+  // plain 'no-cache' (revalidate) and no validator to revalidate against,
+  // browsers kept serving old modules and the console appeared not to change
+  // after a deploy. 'no-store' costs a few KB per load and removes the class of
+  // bug entirely. Static assets, whose contents do not change, stay cacheable.
+  const isCode = ext === '.html' || ext === '.js' || ext === '.css';
   res.writeHead(200, {
     'content-type': MIME[ext] ?? 'application/octet-stream',
-    // The UI is developed live; never let a stale module linger.
-    'cache-control': 'no-cache',
+    'cache-control': isCode ? 'no-store, must-revalidate' : 'public, max-age=86400',
   });
   res.end(body);
   return true;
