@@ -98,7 +98,7 @@ export async function renderDiagnostics(root) {
         h('button.btn', { onclick: () => renderDiagnostics(root) }, icon('refresh', 13), 'Refresh'))),
 
     h('div.grid.grid-3',
-      metric({ label: 'Leads processed', value: fmtNum(q.processed ?? 0), note: 'written to Bitrix24' }),
+      metric({ label: 'Leads processed', value: fmtNum(q.processed ?? 0), note: 'stored on this platform' }),
       metric({
         label: 'Failed', value: fmtNum(q.failed ?? 0),
         note: q.failed ? 'available for resend' : 'none',

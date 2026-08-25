@@ -144,7 +144,9 @@ export class Pipeline {
           sessionId: bundle.sessionId,
           title,
           status: 'mapped',
-          fieldsJson: JSON.stringify({ gated, listFields }),
+          // messageIds scopes the detail view's source messages to THIS lead;
+          // without it a two-lead session shows every message under both.
+          fieldsJson: JSON.stringify({ gated, listFields, messageIds: segItems.map((i) => i.messageId) }),
           verbatim: gated.verbatim,
           aiSummaryRu: gated.summaryRu,
           warningsJson: JSON.stringify(warnings),

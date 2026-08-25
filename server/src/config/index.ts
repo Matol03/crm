@@ -13,8 +13,15 @@ export type Mode = 'mock' | 'live';
 export type OcrMode = 'fixture' | 'live' | 'none';
 export type LlmProvider = 'gemini' | 'deepseek';
 export type OcrProvider = 'gemini' | 'deepseek';
+/** Where finished leads are written. */
+export type LeadSink = 'platform' | 'bitrix';
 
 export interface AppConfig {
+  /**
+   * Destination for finished leads. 'platform' keeps them in this service's own
+   * store and shows them on the dashboard; 'bitrix' writes to the portal.
+   */
+  leadSink: LeadSink;
   bitrixMode: Mode;
   msgraphMode: Mode;
   llmMode: Mode;
@@ -117,6 +124,7 @@ export function loadConfig(raw?: Record<string, string | undefined>): AppConfig 
   }
 
   const cfg: AppConfig = {
+    leadSink: env.LEAD_SINK === 'bitrix' ? 'bitrix' : 'platform',
     bitrixMode: mode(env.BITRIX_MODE),
     msgraphMode: mode(env.MSGRAPH_MODE),
     llmMode: mode(env.LLM_MODE),
@@ -171,7 +179,7 @@ export function loadConfig(raw?: Record<string, string | undefined>): AppConfig 
 /** Throw if a live mode is selected without the credentials it needs. */
 export function validateConfig(cfg: AppConfig): void {
   const errors: string[] = [];
-  if (cfg.bitrixMode === 'live' && !cfg.bitrixWebhookUrl) {
+  if (cfg.leadSink === 'bitrix' && cfg.bitrixMode === 'live' && !cfg.bitrixWebhookUrl) {
     errors.push('BITRIX_MODE=live requires BITRIX_WEBHOOK_URL');
   }
   if (cfg.llmMode === 'live') {
@@ -198,6 +206,7 @@ export function validateConfig(cfg: AppConfig): void {
 /** Safe-to-log view: modes and non-secret tuning only, never secrets/URLs. */
 export function redactedSummary(cfg: AppConfig): Record<string, unknown> {
   return {
+    leadSink: cfg.leadSink,
     bitrixMode: cfg.bitrixMode,
     msgraphMode: cfg.msgraphMode,
     llmMode: cfg.llmMode,

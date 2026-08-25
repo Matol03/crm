@@ -67,3 +67,35 @@ CREATE TABLE IF NOT EXISTS campaign_config (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+-- Platform leads: the console's own lead store (LEAD_SINK=platform).
+-- Mirrors what would otherwise be written to Bitrix24, so the dashboard is the
+-- system of record when no CRM is attached. `local_id` ties a row back to the
+-- pipeline's `leads` row, which carries confidence/provenance/source messages.
+CREATE TABLE IF NOT EXISTS platform_leads (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  local_id         TEXT NOT NULL UNIQUE,
+  session_id       TEXT NOT NULL,
+  title            TEXT,
+  name             TEXT,
+  company          TEXT,
+  position         TEXT,
+  country          TEXT,
+  owner_id         INTEGER,
+  status_id        TEXT NOT NULL DEFAULT 'NEW',
+  lead_type        TEXT,
+  region           TEXT,
+  exhibition       TEXT,
+  product_interest TEXT,
+  priority         TEXT,
+  phones_json      TEXT NOT NULL DEFAULT '[]',
+  emails_json      TEXT NOT NULL DEFAULT '[]',
+  verbatim         TEXT,
+  ai_summary       TEXT,
+  teams_author     TEXT,
+  created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_platform_leads_author  ON platform_leads(teams_author);
+CREATE INDEX IF NOT EXISTS idx_platform_leads_created ON platform_leads(created_at);

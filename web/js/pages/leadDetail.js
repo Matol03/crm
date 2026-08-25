@@ -53,7 +53,7 @@ export async function renderLeadDetail(root, id) {
   if (!lead) {
     replace(root, errorState({
       title: 'Lead not found',
-      note: 'It may have been deleted in Bitrix24, or the identifier is out of date.',
+      note: 'It may have been removed, or the identifier is out of date.',
       retry: () => navigate('leads'),
     }));
     return;
@@ -221,14 +221,19 @@ export async function renderLeadDetail(root, id) {
   function crmSection() {
     const crm = lead.crm || {};
     if (crm.state === 'created') {
+      // With the platform sink the lead lives here, and `url` is an in-app
+      // route — an "open externally" button would just reload this page.
+      const external = crm.url && !String(crm.url).startsWith('#');
       return h('div.banner.banner-ok',
         icon('check', 15),
         h('div.grow',
-          h('div.fw-medium', `In Bitrix24 · Lead #${crm.bitrixLeadId}`),
+          h('div.fw-medium', external
+            ? `In Bitrix24 · Lead #${crm.bitrixLeadId}`
+            : `Lead #${crm.bitrixLeadId} · stored on this platform`),
           h('div.t-xs', { style: { marginTop: '2px' } },
             `Owner ${lead.owner?.name || '—'} · ${lead.statusLabel || ''}`,
-            lead.fromPipeline ? ' · created from Teams' : ' · entered directly in Bitrix24')),
-        crm.url && h('a.btn.btn-sm', { href: crm.url, target: '_blank', rel: 'noopener' },
+            lead.fromPipeline ? ' · created from Teams' : ' · added directly')),
+        external && h('a.btn.btn-sm', { href: crm.url, target: '_blank', rel: 'noopener' },
           'Open in Bitrix', icon('external', 12)));
     }
     if (crm.state === 'failed') {
@@ -316,7 +321,7 @@ export async function renderLeadDetail(root, id) {
           lead.leadType && badge(lead.leadType, /partner/i.test(lead.leadType) ? 'purple' : 'neutral', { large: true }),
           lead.priority && badge(`${lead.priority} priority`, PRIORITY_TONE[lead.priority] || 'neutral', { large: true }),
           statusBadge(lead.status, { large: true, label: lead.statusLabel }),
-          lead.bitrixLeadId && badge(`CRM #${lead.bitrixLeadId}`, 'ok', { large: true }),
+          lead.bitrixLeadId && badge(`Lead #${lead.bitrixLeadId}`, 'ok', { large: true }),
           lead.needsAttachmentRetry && badge('Attachment pending', 'warn', { large: true }))),
       h('div', { style: { minWidth: '220px' } },
         h('div.eyebrow', { style: { marginBottom: '6px' } }, 'Overall confidence'),
@@ -329,7 +334,7 @@ export async function renderLeadDetail(root, id) {
           banner('info',
             h('div.fw-medium', 'This lead was not created by the pipeline'),
             h('div.t-xs', { style: { marginTop: '2px' } },
-              'It was entered directly in Bitrix24, so there are no source messages, confidence scores or evidence to show.')))
+              'It was added directly, so there are no source messages, confidence scores or evidence to show.')))
       : null,
 
     lead.warnings?.length

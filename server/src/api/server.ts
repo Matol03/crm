@@ -18,8 +18,18 @@ import type { Pipeline } from '../pipeline/index.js';
 import type { SessionBundle } from '../contracts/index.js';
 import { loadConfig } from '../config/index.js';
 import { BitrixRepo } from './bitrixRepo.js';
+import { PlatformRepo } from './platformRepo.js';
 import { createHttpTransport } from '../bitrix/transport.js';
 import { buildApp } from '../app.js';
+
+/**
+ * The console's read model. Both the platform store and the Bitrix portal
+ * satisfy it, so the routes below are identical whichever sink is configured.
+ */
+export type LeadRepo = Pick<
+  BitrixRepo,
+  'leads' | 'lead' | 'duplicates' | 'analytics' | 'needsAttention' | 'reference'
+>;
 
 /** Structural view of the wired app this server needs (buildApp / buildMockApp). */
 export interface ApiApp {
@@ -30,6 +40,8 @@ export interface ApiApp {
 /** Only the secret is required to gate the API. */
 export interface ApiServerConfig {
   apiSharedSecret: string;
+  /** Which store backs the console: the platform's own, or the Bitrix portal. */
+  leadSink?: 'platform' | 'bitrix';
   /** Portal webhook. When absent the CRM-backed routes report unavailable. */
   bitrixWebhookUrl?: string;
   campaignExhibition?: string;
@@ -187,22 +199,26 @@ function sourceMessagesFor(db: Db, sessionId: string): SessionBundle['items'] {
 export function createApiServer(app: ApiApp, config: ApiServerConfig): Server {
   const { db, pipeline } = app;
 
-  // CRM-backed read model. Present only when a webhook is configured; the
-  // routes below report `unavailable` rather than inventing data without it.
-  const repo = config.bitrixWebhookUrl
-    ? new BitrixRepo({
-        db,
-        webhookUrl: config.bitrixWebhookUrl,
-        transport: createHttpTransport(config.bitrixWebhookUrl),
-      })
-    : null;
+  // Read model behind the console. With the platform sink the leads live in
+  // this service's own store, so the screens work with no portal attached;
+  // with the bitrix sink the portal remains the source of truth.
+  const repo: LeadRepo | null =
+    config.leadSink === 'platform'
+      ? new PlatformRepo({ db })
+      : config.bitrixWebhookUrl
+      ? new BitrixRepo({
+          db,
+          webhookUrl: config.bitrixWebhookUrl,
+          transport: createHttpTransport(config.bitrixWebhookUrl),
+        })
+      : null;
 
-  /** Guard for every CRM-backed route. */
-  function requireRepo(res: ServerResponse): BitrixRepo | null {
+  /** Guard for every lead-backed route. */
+  function requireRepo(res: ServerResponse): LeadRepo | null {
     if (repo) return repo;
     sendJson(res, 503, {
       error: 'crm_unavailable',
-      message: 'No Bitrix24 webhook is configured, so there is no CRM data to show.',
+      message: 'No lead store is configured, so there is nothing to show yet.',
     });
     return null;
   }
@@ -413,10 +429,12 @@ export function startApi(): void {
   const app = buildApp(cfg);
   const server = createApiServer(app, {
     apiSharedSecret: cfg.apiSharedSecret,
+    leadSink: cfg.leadSink,
     ...(cfg.bitrixWebhookUrl ? { bitrixWebhookUrl: cfg.bitrixWebhookUrl } : {}),
     campaignExhibition: cfg.campaignExhibition,
     campaignSource: cfg.campaignSource,
     system: {
+      leadSink: cfg.leadSink,
       modes: {
         msgraph: cfg.msgraphMode, bitrix: cfg.bitrixMode,
         llm: cfg.llmMode, ocr: cfg.ocrMode, asr: cfg.asrMode,

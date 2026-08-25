@@ -26,7 +26,7 @@ export async function renderAnalytics(root) {
   const head = h('div.page-head',
     h('div',
       h('h1.page-title', 'Analytics'),
-      h('p.page-subtitle', 'Computed from the leads currently in Bitrix24')));
+      h('p.page-subtitle', 'Computed from the leads on this platform')));
 
   if (!a.totals.leads) {
     replace(root, head, panel({
@@ -43,7 +43,7 @@ export async function renderAnalytics(root) {
 
     // ── Totals ────────────────────────────────────────────────────────
     h('div.grid.grid-4',
-      metric({ label: 'Total leads', value: fmtNum(a.totals.leads), note: 'in this portal' }),
+      metric({ label: 'Total leads', value: fmtNum(a.totals.leads), note: 'on this platform' }),
       metric({ label: 'Customers', value: fmtNum(a.totals.customers), note: share(a.totals.customers) }),
       metric({ label: 'Partners', value: fmtNum(a.totals.partners), note: share(a.totals.partners) }),
       metric({
@@ -85,7 +85,7 @@ export async function renderAnalytics(root) {
     h('div', { style: { marginTop: 'var(--sp-4)' } },
       panel({
         title: 'Leads created over time',
-        subtitle: 'By day, from the portal’s own creation dates',
+        subtitle: 'By day, from each lead’s capture time',
         body: orEmpty(a.overTime, 'No creation dates available.'),
       })),
   );

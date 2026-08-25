@@ -63,7 +63,7 @@ async function call(path) {
     connection.live = false;
     connection.reason = 'CRM not configured';
     const body = await res.json().catch(() => ({}));
-    throw new ApiError(body.message || 'No Bitrix24 connection is configured.', { kind: 'crm' });
+    throw new ApiError(body.message || 'No lead store is configured.', { kind: 'crm' });
   }
   if (res.status === 404) {
     // The page loaded but the API route does not exist — this is a static-only
@@ -295,13 +295,13 @@ export async function getDashboard() {
       { key: 'extraction', name: 'Extraction', count: null, note: 'fields + confidence' },
       { key: 'validation', name: 'Validation', count: null, note: 'confidence gate' },
       { key: 'resolution', name: 'Review', count: attention.length, note: 'needs attention', active: attention.length > 0 },
-      { key: 'crm', name: 'In Bitrix24', count: leads.length, note: 'leads', terminal: true },
+      { key: 'crm', name: 'Lead created', count: leads.length, note: 'leads', terminal: true },
     ],
     activity: leads.slice(0, 8).map((l) => ({
       ts: l.createdAt,
       tone: l.status === 'failed' ? 'danger' : l.status === 'created' ? 'ok' : 'info',
       title: [l.person.name, l.company].filter(Boolean).join(' / ') || l.statusLabel,
-      note: l.fromPipeline ? 'Created from Teams' : 'Entered directly in Bitrix24',
+      note: l.fromPipeline ? 'Created from Teams' : 'Added directly',
       state: `#${l.bitrixLeadId}`,
     })),
     leads,

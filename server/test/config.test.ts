@@ -25,8 +25,18 @@ describe('config: loadConfig + validation', () => {
     expect(cfg.bitrixBatchSize).toBe(13);
   });
 
+  it('defaults to the platform lead sink, which needs no portal webhook', () => {
+    const cfg = loadConfig({ ...base, BITRIX_WEBHOOK_URL: '' });
+    expect(cfg.leadSink).toBe('platform');
+    // Leads land on the dashboard, so a missing webhook is not an error.
+    expect(() => loadConfig({ ...base, BITRIX_MODE: 'live', BITRIX_WEBHOOK_URL: '' })).not.toThrow();
+  });
+
   it('throws when a live mode lacks its credential (provider-aware)', () => {
-    expect(() => loadConfig({ ...base, BITRIX_MODE: 'live', BITRIX_WEBHOOK_URL: '' })).toThrow(/BITRIX_WEBHOOK_URL/);
+    // Webhook is required only when leads are actually routed to the portal.
+    expect(() =>
+      loadConfig({ ...base, LEAD_SINK: 'bitrix', BITRIX_MODE: 'live', BITRIX_WEBHOOK_URL: '' }),
+    ).toThrow(/BITRIX_WEBHOOK_URL/);
     expect(() => loadConfig({ ...base, LLM_MODE: 'live', LLM_PROVIDER: 'gemini', GEMINI_API_KEY: '' })).toThrow(/GEMINI_API_KEY/);
     expect(() => loadConfig({ ...base, LLM_MODE: 'live', LLM_PROVIDER: 'deepseek', DEEPSEEK_API_KEY: '' })).toThrow(/DEEPSEEK_API_KEY/);
     expect(() => loadConfig({ ...base, OCR_MODE: 'live', OCR_PROVIDER: 'gemini', GEMINI_API_KEY: '' })).toThrow(/GEMINI_API_KEY/);

@@ -64,13 +64,13 @@ export async function renderDashboard(root) {
     h('div.page-head',
       h('div',
         h('h1.page-title', state.campaign),
-        h('p.page-subtitle', 'Live from Bitrix24 · leads created from Teams messages')),
+        h('p.page-subtitle', 'Leads created from Teams messages · stored on this platform')),
       h('div.row',
         h('button.btn', { onclick: () => navigate('leads') }, 'View all leads', icon('chevronRight', 13)))),
 
     // ── Primary KPIs ──────────────────────────────────────────────────
     h('div.grid.grid-4',
-      metric({ label: 'Leads in Bitrix24', value: fmtNum(kpis.leads), note: 'this portal' }),
+      metric({ label: 'Leads captured', value: fmtNum(kpis.leads), note: 'on this platform' }),
       metric({ label: 'Created from Teams', value: fmtNum(kpis.fromPipeline), note: `${fmtNum(kpis.manual)} entered manually` }),
       metric({
         label: 'Needs attention', value: fmtNum(kpis.review),

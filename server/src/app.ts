@@ -20,6 +20,7 @@ import { DeepSeekLlmClient } from './llm/deepseek.js';
 import { GeminiLlmClient } from './llm/gemini.js';
 import { MockBitrixClient } from './bitrix/mock.js';
 import { RealBitrixClient } from './bitrix/real.js';
+import { PlatformLeadStore } from './platform/store.js';
 import { RateLimiter } from './bitrix/rateLimiter.js';
 import { createHttpTransport } from './bitrix/transport.js';
 import type { AsrClient, OcrClient, LlmClient, BitrixClient, MsGraphClient } from './contracts/index.js';
@@ -80,8 +81,12 @@ export function buildApp(cfg: AppConfig, dbPath = cfg.dbPath): App {
     llm = new HeuristicLlmClient();
   }
 
+  // Lead sink. Default 'platform': leads are stored by this service and shown
+  // on the dashboard. 'bitrix' restores the portal write path unchanged.
   const bitrix: BitrixClient =
-    cfg.bitrixMode === 'live'
+    cfg.leadSink === 'platform'
+      ? new PlatformLeadStore({ db, initialStatusId: cfg.bitrixInitialStatusId })
+      : cfg.bitrixMode === 'live'
       ? new RealBitrixClient({
           webhookUrl: cfg.bitrixWebhookUrl,
           rateLimiter: new RateLimiter({ ratePerSec: cfg.bitrixRateLimitPerSec }),

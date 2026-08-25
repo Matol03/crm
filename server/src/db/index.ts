@@ -67,6 +67,11 @@ export class Db {
       mkdirSync(dirname(resolve(dbPath)), { recursive: true });
     }
     this.handle = new DatabaseSync(dbPath);
+    // The poller and the API server open this file concurrently. Without a busy
+    // timeout SQLite fails a contended write instantly ("database is locked")
+    // instead of waiting — which killed the API on startup whenever the two
+    // raced on applying schema DDL. Wait for the other writer instead.
+    this.handle.exec('PRAGMA busy_timeout = 10000');
     this.migrate();
   }
 
