@@ -7,10 +7,10 @@
 
 import { h, replace } from './ui/dom.js';
 import { errorState } from './ui/primitives.js';
-import { mountShell, renderSidebar, renderConnection } from './ui/shell.js';
-import { register, setNotFound, setOnNavigate, start, navigate } from './router.js';
-import { isAdmin, ADMIN_ROUTES, subscribe } from './state.js';
-import { checkConnection } from './api.js';
+import { mountShell, renderSidebar, renderConnection, renderCampaign } from './ui/shell.js';
+import { register, setNotFound, setOnNavigate, start, navigate, resolve } from './router.js';
+import { isAdmin, ADMIN_ROUTES, subscribe, setCampaign } from './state.js';
+import { checkConnection, getReference } from './api.js';
 
 const main = mountShell(document.getElementById('root'));
 
@@ -83,5 +83,18 @@ subscribe(() => renderSidebar());
 
 start();
 
-// Probe the service so the header reflects whether live data is flowing.
-checkConnection().then(renderConnection);
+// Probe the service so the header reflects whether live data is flowing, then
+// adopt the campaign name it reports — the UI must not assert a campaign of its
+// own, or the header keeps showing a name the service no longer uses.
+checkConnection().then(async () => {
+  renderConnection();
+  try {
+    const ref = await getReference();
+    if (setCampaign(ref?.campaign?.exhibition)) {
+      renderCampaign();
+      resolve();   // repaint the current page, whose title may show it
+    }
+  } catch {
+    /* Offline or unauthenticated: the placeholder stays, nothing is invented. */
+  }
+});

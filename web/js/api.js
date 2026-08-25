@@ -153,9 +153,13 @@ function shapeLead(l) {
     id: String(l.bitrixLeadId),
     bitrixLeadId: l.bitrixLeadId,
     status: statusKey(l),
+    statusId: l.statusId,
     statusLabel: l.statusLabel,
     createdAt: l.createdAt,
     person: { name: l.name, position: l.position },
+    // Other leads carrying the same name — surfaced in the list so a possible
+    // duplicate is visible without opening the Duplicates screen.
+    sameName: { count: l.sameNameCount || 0, ids: l.sameNameIds || [] },
     company: l.company,
     country: l.region,
     region: l.region,
@@ -273,6 +277,33 @@ export async function getReference()  { return callOrSample('/api/crm/reference'
 export async function getSystem()     { return callOrSample('/api/system', sample.SYSTEM); }
 
 /** Recent service activity, newest first. */
+/**
+ * Move a lead along the funnel. This is the console's only write to a lead,
+ * so it is explicit rather than hidden behind an inline edit.
+ */
+export async function setLeadStatus(id, statusId) {
+  const secret = getSecret();
+  if (!secret) throw new ApiError('This console needs the API secret first.', { kind: 'auth' });
+  const res = await fetch(`/api/crm/leads/${id}/status`, {
+    method: 'POST',
+    headers: { 'x-api-secret': secret, 'content-type': 'application/json' },
+    body: JSON.stringify({ statusId }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new ApiError(body.message || 'The status could not be saved.', { kind: 'write' });
+  }
+  return res.json();
+}
+
+/** The funnel, in order. Labels match what the console shows elsewhere. */
+export const LEAD_STATUSES = [
+  { id: 'NEW', label: 'Unprocessed' },
+  { id: 'IN_PROCESS', label: 'In progress' },
+  { id: 'CONVERTED', label: 'Completed' },
+  { id: 'JUNK', label: 'Rejected' },
+];
+
 export async function getLogs(limit = 200) {
   return callOrSample(`/api/logs?limit=${limit}`, sample.LOGS);
 }

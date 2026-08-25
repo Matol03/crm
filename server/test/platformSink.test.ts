@@ -202,3 +202,62 @@ describe('platform read model', () => {
     db.close();
   });
 });
+
+describe('lead status journey', () => {
+  it('moves a lead from Unprocessed to Completed', async () => {
+    const db = freshDb();
+    const store = new PlatformLeadStore({ db });
+    const [res] = await store.writeLeads([write()]);
+    const id = res!.bitrixLeadId!;
+
+    const repo = new PlatformRepo({ db });
+    expect((await repo.lead(id))!.statusLabel).toBe('Unprocessed');
+
+    await store.setLeadStatus(id, 'CONVERTED');
+    const done = await repo.lead(id);
+    expect(done!.statusId).toBe('CONVERTED');
+    expect(done!.statusLabel).toBe('Completed');
+    // 'S' marks a successful terminal state, which the UI colours green.
+    expect(done!.statusSemantic).toBe('S');
+    db.close();
+  });
+
+  it('flags leads that share a name', async () => {
+    const db = freshDb();
+    const store = new PlatformLeadStore({ db });
+    await store.writeLeads([write()]);
+    // Same person name, different manager and different phone — so it is NOT
+    // merged, but it should still be visibly flagged as a possible duplicate.
+    await store.writeLeads([
+      write({
+        localId: 'sess-7#seg-1',
+        sessionId: 'sess-7',
+        phones: [{ value: '+49 89 7770000', type: 'WORK' }],
+        emails: [],
+        service: { teamsGroupId: 'g', teamsMessageIds: ['m5'], teamsAuthor: 'other@example.com' },
+      }),
+    ]);
+
+    const leads = await new PlatformRepo({ db }).leads();
+    expect(leads).toHaveLength(2);
+    for (const l of leads) {
+      const flagged = l as unknown as { sameNameCount: number; sameNameIds: number[] };
+      expect(flagged.sameNameCount).toBe(1);
+      expect(flagged.sameNameIds).toHaveLength(1);
+    }
+    // ...and the pair is listed on the Duplicates screen.
+    const dups = await new PlatformRepo({ db }).duplicates();
+    expect(dups.length).toBeGreaterThan(0);
+    db.close();
+  });
+
+  it('records the campaign as the exhibition when no list option matches', async () => {
+    const db = freshDb();
+    const store = new PlatformLeadStore({ db, campaignExhibition: 'Qazdream Test Project' });
+    // No exhibitionId: the portal would blank it, the platform should not.
+    const [res] = await store.writeLeads([write({ listFields: { leadTypeId: 47 } })]);
+    const lead = await new PlatformRepo({ db }).lead(res!.bitrixLeadId!);
+    expect(lead!.exhibition).toBe('Qazdream Test Project');
+    db.close();
+  });
+});

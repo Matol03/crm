@@ -46,8 +46,8 @@ export function statusBadge(status, { large = false, label } = {}) {
 }
 
 /** Generic badge. */
-export function badge(text, tone = 'neutral', { large = false } = {}) {
-  return h(`span.badge.badge-${tone}${large ? '.badge-lg' : ''}`, text);
+export function badge(text, tone = 'neutral', { large = false, title = null } = {}) {
+  return h(`span.badge.badge-${tone}${large ? '.badge-lg' : ''}`, title ? { title } : null, text);
 }
 
 /* ── Confidence ─────────────────────────────────────────────────────────── */

@@ -31,15 +31,23 @@ export interface PlatformStoreOptions {
   db: Db;
   /** Status assigned to a newly created lead (never re-applied on update). */
   initialStatusId?: string;
+  /**
+   * Campaign name, used when the exhibition does not match a Bitrix list
+   * option. The portal must blank an unmatched value; the platform has no fixed
+   * option list, so it can record the campaign the lead actually came from.
+   */
+  campaignExhibition?: string;
 }
 
 export class PlatformLeadStore implements BitrixClient {
   private readonly db: Db;
   private readonly initialStatusId: string;
+  private readonly campaignExhibition: string | null;
 
   constructor(opts: PlatformStoreOptions) {
     this.db = opts.db;
     this.initialStatusId = opts.initialStatusId ?? 'NEW';
+    this.campaignExhibition = opts.campaignExhibition ?? null;
   }
 
   /**
@@ -127,6 +135,12 @@ export class PlatformLeadStore implements BitrixClient {
     return `#/leads/${id}`;
   }
 
+  async setLeadStatus(id: number, statusId: string): Promise<void> {
+    this.db.handle
+      .prepare(`UPDATE platform_leads SET status_id = ?, updated_at = datetime('now') WHERE id = ?`)
+      .run(statusId, id);
+  }
+
   /**
    * Resolve a list-value id back to its label. The LIVE portal cache is checked
    * first: in dual-sink mode the ids come from the real portal, which may not
@@ -160,7 +174,8 @@ export class PlatformLeadStore implements BitrixClient {
       .run(
         lead.localId, lead.sessionId, lead.title, lead.name, lead.company, lead.position,
         lead.country, lead.assignedById, this.initialStatusId,
-        this.label(f, 'leadTypeId'), this.label(f, 'regionId'), this.label(f, 'exhibitionId'),
+        this.label(f, 'leadTypeId'), this.label(f, 'regionId'),
+        this.label(f, 'exhibitionId') ?? this.campaignExhibition,
         this.label(f, 'productInterestId'), this.label(f, 'priorityId'),
         JSON.stringify(phones), JSON.stringify(emails),
         lead.verbatim, lead.aiSummaryRu, lead.service.teamsAuthor,

@@ -70,7 +70,12 @@ export async function renderLeads(root, route) {
         key: 'person', label: 'Lead', sortable: true, width: '22%',
         value: (l) => l.person?.name,
         render: (l) => h('div',
-          h('div.cell-primary.truncate', l.person?.name || 'Unnamed'),
+          h('div.cell-primary.truncate', { style: { display: 'flex', alignItems: 'center', gap: '6px' } },
+            h('span.truncate', l.person?.name || 'Unnamed'),
+            l.sameName?.count > 0 && badge(
+              l.sameName.count === 1 ? 'Duplicate' : `${l.sameName.count} duplicates`,
+              'warn',
+              { title: `Same name as lead #${l.sameName.ids.join(', #')}` })),
           l.person?.position && h('div.cell-secondary.truncate', l.person.position)),
       },
       {
@@ -171,7 +176,7 @@ export async function renderLeads(root, route) {
     status: h('select.select', {
       onchange: (e) => { filters.status = e.target.value; apply(); },
     }, ...[['', 'All statuses'], ['new', 'Unprocessed'], ['processing', 'In progress'],
-        ['created', 'Qualified'], ['failed', 'Unqualified']]
+        ['created', 'Completed'], ['failed', 'Rejected']]
       .map(([v, l]) => h('option', { value: v, selected: filters.status === v || null }, l))),
     priority: h('select.select', {
       onchange: (e) => { filters.priority = e.target.value; apply(); },
@@ -208,7 +213,7 @@ export async function renderLeads(root, route) {
     h('div.page-head',
       h('div',
         h('h1.page-title', 'Leads'),
-        h('p.page-subtitle', 'Live from Bitrix24 — click a lead to see its evidence')),
+        h('p.page-subtitle', 'Click a lead to see its evidence')),
       h('div.row', countLabel)),
 
     panel({

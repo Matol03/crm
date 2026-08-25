@@ -108,6 +108,29 @@ export class DualLeadSink implements BitrixClient {
     return this.platform.leadUrl(id);
   }
 
+  /**
+   * Change status locally first, then mirror. Same rule as writing: the local
+   * record must reflect the operator's action even if the portal rejects it,
+   * and the mirror failure is recorded rather than thrown.
+   */
+  async setLeadStatus(id: number, statusId: string): Promise<void> {
+    await this.platform.setLeadStatus(id, statusId);
+
+    const row = this.db.handle
+      .prepare('SELECT local_id, bitrix_lead_id FROM platform_leads WHERE id = ?')
+      .get(id) as { local_id: string; bitrix_lead_id: number | null } | undefined;
+    if (!row?.bitrix_lead_id || !this.bitrix.setLeadStatus) return;
+
+    try {
+      await this.bitrix.setLeadStatus(row.bitrix_lead_id, statusId);
+      this.recordMirror(row.local_id, row.bitrix_lead_id, null);
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
+      this.recordMirror(row.local_id, row.bitrix_lead_id, `status not synced: ${detail}`);
+      this.onWarn({ event: 'bitrix_status_sync_failed', localId: row.local_id, detail });
+    }
+  }
+
   /** Portal URL for a mirrored lead, for the console's outbound link. */
   bitrixUrlFor(bitrixLeadId: number): string {
     return this.bitrix.leadUrl(bitrixLeadId);

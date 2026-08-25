@@ -13,8 +13,20 @@ const listeners = new Set();
 export const state = {
   /** 'admin' | 'user' — demo switcher; the API is the real authority. */
   role: localStorage.getItem(KEY) === 'user' ? 'user' : 'admin',
-  campaign: 'Hannover Messe 2026',
+  /**
+   * Campaign name shown in the top bar. Owned by the SERVICE (CAMPAIGN_
+   * EXHIBITION), not by the UI — it is filled in on boot from the reference
+   * endpoint. The placeholder only shows for the moment before that returns.
+   */
+  campaign: '—',
 };
+
+/** Adopt the campaign name the service reports. */
+export function setCampaign(name) {
+  if (!name || state.campaign === name) return false;
+  state.campaign = name;
+  return true;
+}
 
 export const isAdmin = () => state.role === 'admin';
 

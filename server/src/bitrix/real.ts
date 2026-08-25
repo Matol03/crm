@@ -68,6 +68,11 @@ export class RealBitrixClient implements BitrixClient {
     return `${this.origin}/crm/lead/details/${id}/`;
   }
 
+  /** Move an existing lead to another STATUS_ID. */
+  async setLeadStatus(id: number, statusId: string): Promise<void> {
+    await this.call('crm.lead.update', { id, fields: { STATUS_ID: statusId } });
+  }
+
   // ── low-level call with rate limiting + backoff ──────────────
 
   private isRetryable(status: number, env: BitrixEnvelope): boolean {

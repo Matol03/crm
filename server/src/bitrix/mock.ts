@@ -144,6 +144,12 @@ export class MockBitrixClient implements BitrixClient {
     return `${this.portalBaseUrl}/crm/lead/details/${id}/`;
   }
 
+  async setLeadStatus(id: number, statusId: string): Promise<void> {
+    const lead = this.leads.get(id);
+    if (!lead) throw new Error(`lead ${id} not found`);
+    lead.fields['STATUS_ID'] = statusId;
+  }
+
   /** Test helper: all stored leads. */
   allLeads(): StoredLead[] {
     return [...this.leads.values()];

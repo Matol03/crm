@@ -31,10 +31,15 @@ export type LeadRepo = Pick<
   'leads' | 'lead' | 'duplicates' | 'analytics' | 'needsAttention' | 'reference'
 >;
 
+/** Statuses the console may set. Anything else is rejected rather than stored. */
+const ALLOWED_STATUSES = new Set(['NEW', 'IN_PROCESS', 'CONVERTED', 'JUNK']);
+
 /** Structural view of the wired app this server needs (buildApp / buildMockApp). */
 export interface ApiApp {
   db: Db;
   pipeline: Pipeline;
+  /** Lead sink, when the server is allowed to write status changes. */
+  bitrix?: { setLeadStatus?(id: number, statusId: string): Promise<void> };
 }
 
 /** Only the secret is required to gate the API. */
@@ -154,6 +159,25 @@ function readServiceLog(limit = 200): Array<Record<string, unknown>> {
     }
   }
   return out.slice(-limit).reverse();   // newest first
+}
+
+/**
+ * Read a small JSON request body. Capped: an unbounded read would let one
+ * request exhaust memory, and nothing this API accepts is large.
+ */
+async function readJson(req: IncomingMessage): Promise<Record<string, unknown> | null> {
+  const MAX_BYTES = 8 * 1024;
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    const buf = chunk as Buffer;
+    size += buf.length;
+    if (size > MAX_BYTES) throw new Error('body too large');
+    chunks.push(buf);
+  }
+  if (!chunks.length) return null;
+  const parsed: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -293,6 +317,38 @@ export function createApiServer(app: ApiApp, config: ApiServerConfig): Server {
       sendJson(res, 200, await r.needsAttention());
       return;
     }
+    // The one write the console offers: move a lead along its own funnel.
+    const statusRoute = /^\/api\/crm\/leads\/(\d+)\/status$/.exec(path);
+    if (statusRoute && (method === 'POST' || method === 'PATCH')) {
+      const id = Number(statusRoute[1]);
+      const body = await readJson(req).catch(() => null);
+      const statusId = typeof body?.['statusId'] === 'string' ? body['statusId'] : '';
+      if (!ALLOWED_STATUSES.has(statusId)) {
+        sendJson(res, 400, {
+          error: 'bad_status',
+          message: `statusId must be one of: ${[...ALLOWED_STATUSES].join(', ')}`,
+        });
+        return;
+      }
+      if (!app.bitrix?.setLeadStatus) {
+        sendJson(res, 503, {
+          error: 'not_supported',
+          message: 'This lead store cannot change statuses.',
+        });
+        return;
+      }
+      try {
+        await app.bitrix.setLeadStatus(id, statusId);
+        sendJson(res, 200, { ok: true, id, statusId });
+      } catch {
+        sendJson(res, 502, {
+          error: 'status_failed',
+          message: 'The status could not be saved.',
+        });
+      }
+      return;
+    }
+
     // Recent service activity, parsed from the poller's log file.
     // Admin-facing: it names leads, which the operator can already see.
     if (method === 'GET' && path === '/api/logs') {

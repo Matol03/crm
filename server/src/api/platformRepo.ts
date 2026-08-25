@@ -23,7 +23,7 @@ import { SEED_USERFIELD_VALUES } from '../bitrix/mock.js';
 const STATUSES: Record<string, { label: string; semantic: string }> = {
   NEW: { label: 'Unprocessed', semantic: 'P' },
   IN_PROCESS: { label: 'In progress', semantic: 'P' },
-  CONVERTED: { label: 'Converted', semantic: 'S' },
+  CONVERTED: { label: 'Completed', semantic: 'S' },
   JUNK: { label: 'Rejected', semantic: 'F' },
 };
 
@@ -75,7 +75,7 @@ export class PlatformRepo {
       .prepare('SELECT * FROM platform_leads ORDER BY datetime(created_at) DESC, id DESC')
       .all() as unknown as PlatformRow[];
     const owners = this.owners();
-    return rows.map((r) => this.toConsoleLead(r, owners));
+    return markSameName(rows.map((r) => this.toConsoleLead(r, owners)));
   }
 
   async lead(id: number): Promise<ConsoleLeadDetail | null> {
@@ -150,7 +150,10 @@ export class PlatformRepo {
         const email = overlap(a.emails.map(lower), b.emails.map(lower));
         const name = a.name && b.name && lower(a.name) === lower(b.name);
         const company = a.company && b.company && lower(a.company) === lower(b.company);
-        if (!phone && !email && !(name && company)) continue;
+        // A shared name alone is worth surfacing: two reps meeting the same
+        // person often capture different contact details, so there is nothing
+        // else to match on. It ranks below a phone/email hit, never above.
+        if (!phone && !email && !name) continue;
 
         const signals = [
           { label: 'Phone', match: phone },
@@ -313,6 +316,28 @@ function safeJson(s: string | null): unknown {
 function parseArr(json: string): string[] {
   const v = safeJson(json);
   return Array.isArray(v) ? v.map(String) : [];
+}
+
+/**
+ * Flag leads that share a name with another lead, so the list can mark them
+ * without the reader having to open the Duplicates screen to find out.
+ */
+function markSameName(leads: ConsoleLead[]): ConsoleLead[] {
+  const byName = new Map<string, number[]>();
+  for (const l of leads) {
+    if (!l.name) continue;
+    const key = l.name.trim().toLowerCase();
+    byName.set(key, [...(byName.get(key) ?? []), l.bitrixLeadId]);
+  }
+  for (const l of leads) {
+    const ids = l.name ? byName.get(l.name.trim().toLowerCase()) ?? [] : [];
+    const others = ids.filter((id) => id !== l.bitrixLeadId);
+    Object.assign(l, {
+      sameNameCount: others.length,
+      sameNameIds: others,
+    });
+  }
+  return leads;
 }
 
 const lower = (s: string) => s.trim().toLowerCase();

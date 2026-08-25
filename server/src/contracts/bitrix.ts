@@ -82,4 +82,9 @@ export interface BitrixClient {
   getLead(id: number): Promise<BitrixLeadRecord | null>;
   /** Base portal URL for building card links in the reply (no secret leaked). */
   leadUrl(id: number): string;
+  /**
+   * Move a lead to another status. Optional: not every client supports it, and
+   * callers must treat its absence as "status changes are not available here".
+   */
+  setLeadStatus?(id: number, statusId: string): Promise<void>;
 }

@@ -14,7 +14,7 @@ import {
   panel, statusBadge, badge, confidence, lowConfidenceFlag,
   skeleton, errorState, apiErrorState, banner, toast,
 } from '../ui/primitives.js';
-import { getLead, resendLead, FIELD_LABELS } from '../api.js';
+import { getLead, resendLead, setLeadStatus, LEAD_STATUSES, FIELD_LABELS } from '../api.js';
 import { navigate } from '../router.js';
 import { isAdmin } from '../state.js';
 
@@ -316,6 +316,51 @@ export async function renderLeadDetail(root, id) {
     });
   }
 
+  /**
+   * Move the lead along its funnel. One click per step, with the current stage
+   * shown as selected — quicker and less error-prone than a dropdown for four
+   * options, and it makes the whole path visible at a glance.
+   */
+  function statusControl() {
+    const current = lead.statusId || 'NEW';
+    let busy = false;
+
+    const buttons = LEAD_STATUSES.map((st) => {
+      const active = st.id === current;
+      const btn = h(
+        `button.btn.btn-sm${active ? '.btn-primary' : ''}`,
+        {
+          disabled: active,
+          title: active ? 'Current stage' : `Move to “${st.label}”`,
+          onclick: async () => {
+            if (busy) return;
+            busy = true;
+            const previous = btn.textContent;
+            btn.textContent = 'Saving…';
+            try {
+              await setLeadStatus(lead.bitrixLeadId, st.id);
+              toast(`Moved to “${st.label}”`);
+              // Re-render from the service so what is shown is what was stored.
+              renderLeadDetail(root, String(lead.bitrixLeadId));
+            } catch (err) {
+              btn.textContent = previous;
+              busy = false;
+              toast(err?.message || 'The status could not be saved.', 'warn');
+            }
+          },
+        },
+        st.label,
+      );
+      return btn;
+    });
+
+    return panel({
+      title: 'Stage',
+      subtitle: 'Where this lead stands. Changing it here updates the record.',
+      body: h('div.row.wrap', { style: { gap: 'var(--sp-2)', padding: 'var(--sp-3)' } }, ...buttons),
+    });
+  }
+
   /* ── Compose ─────────────────────────────────────────────────────────── */
 
   renderFields();
@@ -362,6 +407,8 @@ export async function renderLeadDetail(root, id) {
       : null,
 
     h('div', { style: { marginBottom: 'var(--sp-4)' } }, crmSection(), mirrorWarning()),
+
+    lead.bitrixLeadId && h('div', { style: { marginBottom: 'var(--sp-4)' } }, statusControl()),
 
     // ── Extracted data + evidence, side by side ───────────────────────
     h('div.grid', { style: { gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', alignItems: 'start' } },

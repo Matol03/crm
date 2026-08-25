@@ -15,7 +15,7 @@ const MAIN_NAV = [
       { route: 'leads', query: '', label: 'All' },
       { route: 'leads', query: 'status=new', label: 'Unprocessed' },
       { route: 'leads', query: 'status=processing', label: 'In progress' },
-      { route: 'leads', query: 'status=created', label: 'Qualified' },
+      { route: 'leads', query: 'status=created', label: 'Completed' },
     ] },
   { route: 'unresolved', label: 'Needs attention', icon: 'unresolved' },
   { route: 'duplicates', label: 'Duplicates', icon: 'duplicates' },
@@ -33,6 +33,7 @@ const ADMIN_NAV = [
 
 let sidebarEl = null;
 let statusEl = null;
+let campaignEl = null;
 
 function navItem({ route, query = '', label, icon: iconName, badge }, activeRoute, activeQuery) {
   const href = `#/${route}${query ? `?${query}` : ''}`;
@@ -73,6 +74,11 @@ export function renderSidebar() {
   }
 
   replace(sidebarEl, groups);
+}
+
+/** Repaint the campaign name after the service reports it. */
+export function renderCampaign() {
+  if (campaignEl) campaignEl.textContent = state.campaign;
 }
 
 /** Connection pill — reflects whether live API data is flowing. */
@@ -223,7 +229,7 @@ export function mountShell(root) {
         h('div.row-4',
           h('div.row', { style: { gap: '6px' } },
             icon('campaign', 15, 'subtle'),
-            h('span.fw-medium', state.campaign)),
+            (campaignEl = h('span.fw-medium', state.campaign))),
           statusEl),
         h('div.row-4',
           roleSwitch,
