@@ -40,7 +40,12 @@ export interface MsGraphClient {
 
 /** ASR: speech-to-text behind an adapter (PRD Section 7). */
 export interface AsrClient {
-  transcribe(audio: { mediaUrl?: string; bytes?: Uint8Array }): Promise<string>;
+  transcribe(audio: {
+    mediaUrl?: string;
+    bytes?: Uint8Array;
+    /** Container type reported by Teams; providers need it for audio. */
+    mimeType?: string;
+  }): Promise<string>;
 }
 
 /**

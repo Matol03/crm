@@ -236,7 +236,18 @@ export class Pipeline {
     const out: SessionItem[] = [];
     for (const item of items) {
       if (item.type === 'voice' && !item.transcript) {
+        // Same lazy fetch as images: bytes are pulled only when a transcript is
+        // actually needed, and an unavailable recording flags the lead for
+        // retry instead of discarding it.
+        const file = item.attachmentRef
+          ? await this.deps.graph.fetchAttachment(item.attachmentRef)
+          : null;
+        if (!file && item.attachmentRef) {
+          out.push({ ...item, attachmentPending: true });
+          continue;
+        }
         const transcript = await this.deps.asr.transcribe({
+          ...(file ? { bytes: file.bytes, mimeType: file.mimeType } : {}),
           ...(item.mediaUrl !== undefined ? { mediaUrl: item.mediaUrl } : {}),
         });
         out.push({ ...item, transcript });

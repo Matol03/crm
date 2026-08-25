@@ -12,6 +12,7 @@ import { Pipeline, type PipelineDeps } from './pipeline/index.js';
 import { MockMsGraphClient } from './msgraph/mock.js';
 import { RealMsGraphClient } from './msgraph/real.js';
 import { MockAsrClient } from './asr/mock.js';
+import { GeminiAsrClient } from './asr/gemini.js';
 import { FixtureOcrClient } from './ocr/mock.js';
 import { DeepSeekOcrClient } from './ocr/deepseek.js';
 import { GeminiOcrClient } from './ocr/gemini.js';
@@ -60,7 +61,16 @@ export function buildApp(cfg: AppConfig, dbPath = cfg.dbPath): App {
         })
       : new MockMsGraphClient();
 
-  const asr: AsrClient = new MockAsrClient();
+  // Speech-to-text. Live mode reuses the Gemini credential already configured
+  // for extraction and OCR, so voice notes need no separate provider or key.
+  const asr: AsrClient =
+    cfg.asrMode === 'live'
+      ? new GeminiAsrClient({
+          apiKey: cfg.asrApiKey || cfg.geminiApiKey,
+          baseUrl: cfg.geminiBaseUrl,
+          model: cfg.geminiModel,
+        })
+      : new MockAsrClient();
 
   let ocr: OcrClient;
   if (cfg.ocrMode === 'live') {
