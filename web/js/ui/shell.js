@@ -117,13 +117,22 @@ function renderSampleBanner() {
 /** Prompt for the API secret so the UI can switch to live data. */
 function openConnectionDrawer() {
   let input;
+  let errorSlot;
+  const showError = (msg) => {
+    if (!errorSlot) return;
+    errorSlot.textContent = '';
+    errorSlot.appendChild(
+      h('div.banner.banner-warn', h('div', h('div.fw-medium', 'Not connected'),
+        h('div.t-xs', { style: { marginTop: '2px' } }, msg))));
+  };
   openDrawer({
     title: 'Connect to the lead service',
-    subtitle: 'The console reads Bitrix24 through the service',
+    subtitle: 'The console reads leads through the service',
     body: h('div.stack-4',
       h('p.t-sm.muted',
-        'This console has no data of its own. It reads leads from Bitrix24 and the AI metadata ',
-        'from the service’s database, so it needs the service’s API secret.'),
+        'This console has no data of its own. It reads leads and the AI metadata from the ',
+        'service’s database, so it needs the service’s API secret.'),
+      (errorSlot = h('div')),
       h('div',
         h('label.field-label', { for: 'api-secret' }, 'API shared secret'),
         (input = h('input.input#api-secret', {
@@ -131,20 +140,42 @@ function openConnectionDrawer() {
           autocomplete: 'off', spellcheck: 'false',
         }))),
       h('div.banner.banner-info',
-        h('div', h('div.fw-medium', 'Where the data comes from'),
+        h('div', h('div.fw-medium', 'Where to find the secret'),
           h('div.t-xs', { style: { marginTop: '2px' } },
-            'Leads, statuses, owners and list values come from Bitrix24. Per-field confidence, ',
-            'provenance and the original Teams messages come from the service that created them. ',
-            'A lead entered by hand in Bitrix has no AI metadata and is labelled as such.'))),
+            'It is the API_SHARED_SECRET value in the service’s .env file. Copy the value only — ',
+            'not the name, the equals sign, or any quotes. It is kept for this browser tab only ',
+            'and is never put in the address bar.'))),
     ),
     footer: (close) => [
       h('button.btn.btn-primary', {
-        onclick: async () => {
-          setSecret(input.value.trim());
-          close();
-          toast(input.value.trim() ? 'Reconnecting…' : 'Disconnected');
+        onclick: async (ev) => {
+          const value = input.value.trim();
+          if (!value) { showError('Enter the API shared secret first.'); input.focus(); return; }
+
+          // Verify BEFORE closing. Closing on a bad secret just drops the user
+          // back to sample data with no idea why it did not connect.
+          const btn = ev.currentTarget;
+          btn.disabled = true;
+          const previous = btn.textContent;
+          btn.textContent = 'Checking…';
+          setSecret(value);
           const { checkConnection } = await import('../api.js');
-          await checkConnection();
+          const ok = await checkConnection();
+          btn.disabled = false;
+          btn.textContent = previous;
+
+          if (!ok) {
+            setSecret('');
+            renderConnection();
+            showError(
+              connection.reason === 'Invalid API secret'
+                ? 'That secret was rejected. Copy the API_SHARED_SECRET value from the service’s .env — the value only, without the name or quotes.'
+                : `Could not connect: ${connection.reason || 'the service is not responding'}.`,
+            );
+            return;
+          }
+          close();
+          toast('Connected');
           renderConnection();
           const { resolve } = await import('../router.js');
           resolve();

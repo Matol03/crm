@@ -18,8 +18,23 @@
  * Children may be nodes, strings/numbers, arrays, or null/false (skipped).
  */
 export function h(tag, props, ...children) {
-  const [name, ...classes] = String(tag).split('.');
+  // Tag syntax: 'input.cls#id' or 'div#id.cls'. The '#id' part must be split
+  // off before the '.' split, or it silently becomes part of a class name and
+  // the element ends up with no id at all — which quietly breaks any
+  // <label for="..."> pointing at it.
+  const raw = String(tag);
+  let id = '';
+  let rest = raw;
+  const hashAt = raw.indexOf('#');
+  if (hashAt !== -1) {
+    const after = raw.slice(hashAt + 1);
+    const dot = after.indexOf('.');
+    id = dot === -1 ? after : after.slice(0, dot);
+    rest = raw.slice(0, hashAt) + (dot === -1 ? '' : after.slice(dot));
+  }
+  const [name, ...classes] = rest.split('.');
   const el = document.createElement(name || 'div');
+  if (id) el.id = id;
   if (classes.length) el.className = classes.join(' ');
 
   // Allow h('div', 'text') and h('div', [nodes]) without a props object.
