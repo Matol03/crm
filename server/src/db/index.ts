@@ -79,6 +79,24 @@ export class Db {
   migrate(): void {
     const sql = readFileSync(SCHEMA_PATH, 'utf8');
     this.handle.exec(sql);
+    // Columns added after a database was first created. `CREATE TABLE IF NOT
+    // EXISTS` skips an existing table entirely, so new columns must be added
+    // separately — and `ALTER TABLE ADD COLUMN` throws if the column is already
+    // there, which would break every subsequent startup. Hence the check.
+    this.ensureColumn('platform_leads', 'bitrix_lead_id', 'INTEGER');
+    this.ensureColumn('platform_leads', 'bitrix_synced_at', 'TEXT');
+    this.ensureColumn('platform_leads', 'bitrix_error', 'TEXT');
+  }
+
+  /** Add a column only when the table exists and lacks it. */
+  private ensureColumn(table: string, column: string, type: string): void {
+    const exists = this.handle
+      .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name = ?`)
+      .get(table);
+    if (!exists) return;
+    const cols = this.handle.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+    if (cols.some((c) => c.name === column)) return;
+    this.handle.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
   }
 
   close(): void {

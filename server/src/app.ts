@@ -21,6 +21,7 @@ import { GeminiLlmClient } from './llm/gemini.js';
 import { MockBitrixClient } from './bitrix/mock.js';
 import { RealBitrixClient } from './bitrix/real.js';
 import { PlatformLeadStore } from './platform/store.js';
+import { DualLeadSink } from './platform/dual.js';
 import { RateLimiter } from './bitrix/rateLimiter.js';
 import { createHttpTransport } from './bitrix/transport.js';
 import type { AsrClient, OcrClient, LlmClient, BitrixClient, MsGraphClient } from './contracts/index.js';
@@ -81,12 +82,9 @@ export function buildApp(cfg: AppConfig, dbPath = cfg.dbPath): App {
     llm = new HeuristicLlmClient();
   }
 
-  // Lead sink. Default 'platform': leads are stored by this service and shown
-  // on the dashboard. 'bitrix' restores the portal write path unchanged.
-  const bitrix: BitrixClient =
-    cfg.leadSink === 'platform'
-      ? new PlatformLeadStore({ db, initialStatusId: cfg.bitrixInitialStatusId })
-      : cfg.bitrixMode === 'live'
+  // Portal client, built only when the portal is actually a destination.
+  const portal = (): BitrixClient =>
+    cfg.bitrixMode === 'live'
       ? new RealBitrixClient({
           webhookUrl: cfg.bitrixWebhookUrl,
           rateLimiter: new RateLimiter({ ratePerSec: cfg.bitrixRateLimitPerSec }),
@@ -95,6 +93,24 @@ export function buildApp(cfg: AppConfig, dbPath = cfg.dbPath): App {
           initialStatusId: cfg.bitrixInitialStatusId,
         })
       : new MockBitrixClient();
+
+  // Lead sink:
+  //   platform — stored here and shown on the dashboard (default)
+  //   bitrix   — written to the portal, as originally built
+  //   both     — stored here AND mirrored to the portal, local write primary
+  let bitrix: BitrixClient;
+  if (cfg.leadSink === 'platform') {
+    bitrix = new PlatformLeadStore({ db, initialStatusId: cfg.bitrixInitialStatusId });
+  } else if (cfg.leadSink === 'both') {
+    bitrix = new DualLeadSink({
+      db,
+      platform: new PlatformLeadStore({ db, initialStatusId: cfg.bitrixInitialStatusId }),
+      bitrix: portal(),
+      onWarn: (e) => console.warn(JSON.stringify({ level: 'warn', src: 'sink', ...e })),
+    });
+  } else {
+    bitrix = portal();
+  }
 
   const deps: PipelineDeps = { db, graph, asr, ocr, llm, bitrix, config: pipelineConfig(cfg) };
   return { db, graph, bitrix, pipeline: new Pipeline(deps) };

@@ -41,7 +41,7 @@ export interface ApiApp {
 export interface ApiServerConfig {
   apiSharedSecret: string;
   /** Which store backs the console: the platform's own, or the Bitrix portal. */
-  leadSink?: 'platform' | 'bitrix';
+  leadSink?: 'platform' | 'bitrix' | 'both';
   /** Portal webhook. When absent the CRM-backed routes report unavailable. */
   bitrixWebhookUrl?: string;
   campaignExhibition?: string;
@@ -203,8 +203,8 @@ export function createApiServer(app: ApiApp, config: ApiServerConfig): Server {
   // this service's own store, so the screens work with no portal attached;
   // with the bitrix sink the portal remains the source of truth.
   const repo: LeadRepo | null =
-    config.leadSink === 'platform'
-      ? new PlatformRepo({ db })
+    config.leadSink === 'platform' || config.leadSink === 'both'
+      ? new PlatformRepo({ db, ...(config.bitrixWebhookUrl ? { bitrixWebhookUrl: config.bitrixWebhookUrl } : {}) })
       : config.bitrixWebhookUrl
       ? new BitrixRepo({
           db,

@@ -235,6 +235,10 @@ export async function getLead(bitrixId) {
       state: statusKey(l) === 'failed' ? 'failed' : 'created',
       bitrixLeadId: l.bitrixLeadId,
       url: l.url,
+      // Mirror to Bitrix24 (only populated when the service writes to both).
+      mirror: l.crmLeadId != null || l.crmError
+        ? { leadId: l.crmLeadId ?? null, url: l.crmUrl ?? null, syncedAt: l.crmSyncedAt ?? null, error: l.crmError ?? null }
+        : null,
     },
   };
 }

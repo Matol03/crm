@@ -93,6 +93,12 @@ CREATE TABLE IF NOT EXISTS platform_leads (
   verbatim         TEXT,
   ai_summary       TEXT,
   teams_author     TEXT,
+  -- Mirror state for LEAD_SINK=both. The platform row is the primary record;
+  -- these track whether the same lead also reached Bitrix24. A failed mirror is
+  -- recorded, never thrown, so the lead is never lost locally.
+  bitrix_lead_id   INTEGER,
+  bitrix_synced_at TEXT,
+  bitrix_error     TEXT,
   created_at       TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
 );

@@ -218,6 +218,18 @@ export async function renderLeadDetail(root, id) {
 
   /* ── CRM status / retry ──────────────────────────────────────────────── */
 
+  /** Mirror failure is shown, never hidden — the lead is safe locally. */
+  function mirrorWarning() {
+    const m = lead.crm?.mirror;
+    if (!m?.error) return null;
+    return h('div.banner.banner-warn',
+      icon('alert', 15),
+      h('div.grow',
+        h('div.fw-medium', 'Not copied to Bitrix24'),
+        h('div.t-xs', { style: { marginTop: '2px' } },
+          'This lead is saved here and is not lost. The copy to Bitrix24 failed: ' + m.error)));
+  }
+
   function crmSection() {
     const crm = lead.crm || {};
     if (crm.state === 'created') {
@@ -234,7 +246,12 @@ export async function renderLeadDetail(root, id) {
             `Owner ${lead.owner?.name || '—'} · ${lead.statusLabel || ''}`,
             lead.fromPipeline ? ' · created from Teams' : ' · added directly')),
         external && h('a.btn.btn-sm', { href: crm.url, target: '_blank', rel: 'noopener' },
-          'Open in Bitrix', icon('external', 12)));
+          'Open in Bitrix', icon('external', 12)),
+        // Mirrored to the portal as well — offer the outbound link, or say
+        // plainly that the copy did not make it.
+        !external && crm.mirror?.url && h('a.btn.btn-sm',
+          { href: crm.mirror.url, target: '_blank', rel: 'noopener' },
+          `Also in Bitrix #${crm.mirror.leadId}`, icon('external', 12)));
     }
     if (crm.state === 'failed') {
       const btn = h('button.btn.btn-primary.btn-sm', {
@@ -344,7 +361,7 @@ export async function renderLeadDetail(root, id) {
             h('ul', { style: { marginTop: '4px' } }, lead.warnings.map((w) => h('li.t-sm', '• ' + w)))))
       : null,
 
-    h('div', { style: { marginBottom: 'var(--sp-4)' } }, crmSection()),
+    h('div', { style: { marginBottom: 'var(--sp-4)' } }, crmSection(), mirrorWarning()),
 
     // ── Extracted data + evidence, side by side ───────────────────────
     h('div.grid', { style: { gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', alignItems: 'start' } },

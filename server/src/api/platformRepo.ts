@@ -35,18 +35,29 @@ interface PlatformRow {
   product_interest: string | null; priority: string | null;
   phones_json: string; emails_json: string;
   verbatim: string | null; ai_summary: string | null; teams_author: string | null;
+  bitrix_lead_id: number | null; bitrix_synced_at: string | null; bitrix_error: string | null;
   created_at: string; updated_at: string;
+}
+
+/** Portal base URL, derived from the webhook without leaking its secret path. */
+function portalBase(webhookUrl?: string): string | null {
+  if (!webhookUrl) return null;
+  try { return new URL(webhookUrl).origin; } catch { return null; }
 }
 
 export interface PlatformRepoOptions {
   db: Db;
+  /** Used only to build outbound card links for mirrored leads. */
+  bitrixWebhookUrl?: string;
 }
 
 export class PlatformRepo {
   private readonly db: Db;
+  private readonly portalOrigin: string | null;
 
   constructor(opts: PlatformRepoOptions) {
     this.db = opts.db;
+    this.portalOrigin = portalBase(opts.bitrixWebhookUrl);
   }
 
   /** Owner id -> display name, from the Teams->owner mapping table. */
@@ -276,6 +287,18 @@ export class PlatformRepo {
       fromPipeline: true,
       localId: r.local_id,
       confidence: gated?.confidence ?? null,
+      // Mirror state (LEAD_SINK=both). Null everywhere else, so the console
+      // simply shows nothing rather than implying a portal that isn't in use.
+      crmLeadId: r.bitrix_lead_id,
+      crmUrl:
+        r.bitrix_lead_id != null && this.portalOrigin
+          ? `${this.portalOrigin}/crm/lead/details/${r.bitrix_lead_id}/`
+          : null,
+      crmSyncedAt: r.bitrix_synced_at,
+      crmError: r.bitrix_error,
+    } as ConsoleLead & {
+      crmLeadId: number | null; crmUrl: string | null;
+      crmSyncedAt: string | null; crmError: string | null;
     };
   }
 }

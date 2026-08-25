@@ -127,6 +127,24 @@ export class PlatformLeadStore implements BitrixClient {
     return `#/leads/${id}`;
   }
 
+  /**
+   * Resolve a list-value id back to its label. The LIVE portal cache is checked
+   * first: in dual-sink mode the ids come from the real portal, which may not
+   * match the seeded catalog, and a stale seed lookup would mislabel the lead.
+   */
+  private label(fields: Record<string, unknown>, key: string): string | null {
+    const raw = fields[key];
+    if (raw == null || raw === '') return null;
+    const code = LIST_KEY_TO_FIELD[key];
+    const id = Number(raw);
+    if (!code || !Number.isFinite(id)) return String(raw);
+
+    const cached = this.db.getCachedListValues(code).find((v) => v.bitrix_id === id);
+    if (cached) return cached.label;
+    const seeded = (SEED_USERFIELD_VALUES[code] ?? []).find((v) => v.id === id);
+    return seeded ? seeded.label : String(raw);
+  }
+
   // ── internals ────────────────────────────────────────────────
 
   private insert(lead: LeadWrite, phones: string[], emails: string[]): number {
@@ -142,8 +160,8 @@ export class PlatformLeadStore implements BitrixClient {
       .run(
         lead.localId, lead.sessionId, lead.title, lead.name, lead.company, lead.position,
         lead.country, lead.assignedById, this.initialStatusId,
-        label(f, 'leadTypeId'), label(f, 'regionId'), label(f, 'exhibitionId'),
-        label(f, 'productInterestId'), label(f, 'priorityId'),
+        this.label(f, 'leadTypeId'), this.label(f, 'regionId'), this.label(f, 'exhibitionId'),
+        this.label(f, 'productInterestId'), this.label(f, 'priorityId'),
         JSON.stringify(phones), JSON.stringify(emails),
         lead.verbatim, lead.aiSummaryRu, lead.service.teamsAuthor,
       );
@@ -179,8 +197,8 @@ export class PlatformLeadStore implements BitrixClient {
       )
       .run(
         lead.title, lead.name, lead.company, lead.position, lead.country, lead.assignedById,
-        label(f, 'leadTypeId'), label(f, 'regionId'), label(f, 'exhibitionId'),
-        label(f, 'productInterestId'), label(f, 'priorityId'),
+        this.label(f, 'leadTypeId'), this.label(f, 'regionId'), this.label(f, 'exhibitionId'),
+        this.label(f, 'productInterestId'), this.label(f, 'priorityId'),
         JSON.stringify(mergedPhones), JSON.stringify(mergedEmails),
         lead.verbatim, lead.aiSummaryRu, id,
       );
@@ -202,15 +220,7 @@ const LIST_KEY_TO_FIELD: Record<string, string> = {
   priorityId: 'UF_CRM_PRIORITY',
 };
 
-function label(fields: Record<string, unknown>, key: string): string | null {
-  const raw = fields[key];
-  if (raw == null || raw === '') return null;
-  const code = LIST_KEY_TO_FIELD[key];
-  const id = Number(raw);
-  if (!code || !Number.isFinite(id)) return String(raw);
-  const found = (SEED_USERFIELD_VALUES[code] ?? []).find((v) => v.id === id);
-  return found ? found.label : String(raw);
-}
+
 
 function parseComm(json: string): string[] {
   try {
