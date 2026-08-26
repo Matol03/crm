@@ -35,3 +35,4 @@ _*.sh
 _*.ts
 
 .vercel
+CREDENTIALS.local.txt
