@@ -236,6 +236,19 @@ export async function renderLeadDetail(root, id) {
       // With the platform sink the lead lives here, and `url` is an in-app
       // route — an "open externally" button would just reload this page.
       const external = crm.url && !String(crm.url).startsWith('#');
+      // Not in the CRM yet is the normal state now, not a problem: a lead is
+      // created there when someone marks it Completed.
+      if (!external && !crm.mirror?.leadId && !crm.mirror?.error) {
+        const done = lead.statusId === 'CONVERTED';
+        return h('div.banner.banner-info',
+          icon('info', 15),
+          h('div.grow',
+            h('div.fw-medium', done ? `Lead #${crm.bitrixLeadId} · not in Bitrix24` : `Lead #${crm.bitrixLeadId} · not sent to Bitrix24 yet`),
+            h('div.t-xs', { style: { marginTop: '2px' } },
+              done
+                ? 'This lead is marked Completed but has no Bitrix24 record. Set it back and mark it Completed again to send it.'
+                : 'It is created in Bitrix24 when you mark it Completed below. Until then it stays here for review.')));
+      }
       return h('div.banner.banner-ok',
         icon('check', 15),
         h('div.grow',
@@ -356,7 +369,7 @@ export async function renderLeadDetail(root, id) {
 
     return panel({
       title: 'Stage',
-      subtitle: 'Where this lead stands. Changing it here updates the record.',
+      subtitle: 'Marking a lead Completed creates it in Bitrix24. Until then it stays here.',
       body: h('div.row.wrap', { style: { gap: 'var(--sp-2)', padding: 'var(--sp-3)' } }, ...buttons),
     });
   }

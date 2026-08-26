@@ -43,15 +43,21 @@ class BrokenBitrix implements BitrixClient {
   leadUrl(id: number): string { return `https://portal.example/crm/lead/details/${id}/`; }
 }
 
+/** Default sink: leads are published to the portal only on completion. */
 function sink(db: Db, bitrix: BitrixClient) {
   return new DualLeadSink({ db, platform: new PlatformLeadStore({ db }), bitrix });
 }
 
-describe('dual sink — leads go to both stores', () => {
+/** The older behaviour, still supported: mirror as soon as a lead is written. */
+function immediateSink(db: Db, bitrix: BitrixClient) {
+  return new DualLeadSink({ db, platform: new PlatformLeadStore({ db }), bitrix, publish: 'immediate' });
+}
+
+describe('dual sink with publish=immediate — leads go to both stores at once', () => {
   it('writes to the platform and mirrors to Bitrix', async () => {
     const db = freshDb();
     const portal = new MockBitrixClient();
-    const [res] = await sink(db, portal).writeLeads([write()]);
+    const [res] = await immediateSink(db, portal).writeLeads([write()]);
 
     // The id handed back is the PLATFORM id — the console links by it.
     expect(res!.error).toBeNull();
@@ -69,7 +75,7 @@ describe('dual sink — leads go to both stores', () => {
   it('keeps the lead locally when the portal write fails', async () => {
     // The whole point of local-primary: a portal outage must never lose a lead.
     const db = freshDb();
-    const [res] = await sink(db, new BrokenBitrix()).writeLeads([write()]);
+    const [res] = await immediateSink(db, new BrokenBitrix()).writeLeads([write()]);
 
     expect(res!.error).toBeNull();          // not a pipeline failure
     expect(res!.bitrixLeadId).toBe(1);      // stored locally
@@ -90,7 +96,7 @@ describe('dual sink — leads go to both stores', () => {
 
   it('surfaces the mirror failure to the console', async () => {
     const db = freshDb();
-    await sink(db, new BrokenBitrix()).writeLeads([write()]);
+    await immediateSink(db, new BrokenBitrix()).writeLeads([write()]);
     const [lead] = await new PlatformRepo({ db }).leads();
     const l = lead as unknown as { crmLeadId: number | null; crmError: string | null; crmUrl: string | null };
     expect(l.crmLeadId).toBeNull();
@@ -100,7 +106,7 @@ describe('dual sink — leads go to both stores', () => {
 
   it('builds a portal link for a mirrored lead without leaking the webhook', async () => {
     const db = freshDb();
-    await sink(db, new MockBitrixClient()).writeLeads([write()]);
+    await immediateSink(db, new MockBitrixClient()).writeLeads([write()]);
     const repo = new PlatformRepo({
       db,
       bitrixWebhookUrl: 'https://portal.example.kz/rest/21/SUPERSECRETTOKEN/',
@@ -117,7 +123,7 @@ describe('dual sink — leads go to both stores', () => {
     // Bitrix may be missing leads whose mirror failed; asking it would
     // re-create a duplicate the platform already holds.
     const db = freshDb();
-    const s = sink(db, new BrokenBitrix());
+    const s = immediateSink(db, new BrokenBitrix());
     await s.writeLeads([write()]);
     const [second] = await s.writeLeads([write({ localId: 'sess-2#seg-1', sessionId: 'sess-2' })]);
 
@@ -128,7 +134,7 @@ describe('dual sink — leads go to both stores', () => {
 
   it('falls back to the seeded list values when the portal cannot be reached', async () => {
     const db = freshDb();
-    const values = await sink(db, new BrokenBitrix()).listUserFieldValues('UF_CRM_LEAD_TYPE');
+    const values = await immediateSink(db, new BrokenBitrix()).listUserFieldValues('UF_CRM_LEAD_TYPE');
     expect(values.find((v) => v.label === 'Customer')?.id).toBe(47);
     db.close();
   });
@@ -138,7 +144,7 @@ describe('deleting and merging', () => {
   it('deletes the lead here and removes its copy from the portal', async () => {
     const db = freshDb();
     const portal = new MockBitrixClient();
-    const s = sink(db, portal);
+    const s = immediateSink(db, portal);
     const [res] = await s.writeLeads([write()]);
     const portalId = (db.handle
       .prepare('SELECT bitrix_lead_id FROM platform_leads WHERE id = ?')
@@ -156,7 +162,7 @@ describe('deleting and merging', () => {
   it('reports when the local delete succeeded but the portal did not', async () => {
     const db = freshDb();
     const portal = new MockBitrixClient();
-    const s = sink(db, portal);
+    const s = immediateSink(db, portal);
     const [res] = await s.writeLeads([write()]);
     // Portal forgets the lead independently, so its delete will fail.
     portal.deleteLead = async () => { throw new Error('403 forbidden'); };
@@ -169,7 +175,7 @@ describe('deleting and merging', () => {
 
   it('merges a duplicate into the survivor, filling only its gaps', async () => {
     const db = freshDb();
-    const s = sink(db, new MockBitrixClient());
+    const s = immediateSink(db, new MockBitrixClient());
     const [keep] = await s.writeLeads([write({ localId: 'a', company: null, emails: [] })]);
     const [drop] = await s.writeLeads([write({
       localId: 'b', name: 'Anna Petrova', company: 'Nordwind GmbH',
@@ -196,7 +202,7 @@ describe('deleting and merging', () => {
   it('removes the portal copy when a lead is rejected', async () => {
     const db = freshDb();
     const portal = new MockBitrixClient();
-    const s = sink(db, portal);
+    const s = immediateSink(db, portal);
     const [res] = await s.writeLeads([write()]);
     const portalId = (db.handle
       .prepare('SELECT bitrix_lead_id FROM platform_leads WHERE id = ?')
@@ -215,7 +221,7 @@ describe('deleting and merging', () => {
   it('keeps the portal copy for any other status change', async () => {
     const db = freshDb();
     const portal = new MockBitrixClient();
-    const s = sink(db, portal);
+    const s = immediateSink(db, portal);
     const [res] = await s.writeLeads([write()]);
     const portalId = (db.handle
       .prepare('SELECT bitrix_lead_id FROM platform_leads WHERE id = ?')
@@ -247,7 +253,7 @@ describe('deleting a lead whose portal id was never recorded', () => {
     expect(await portal.getLead(portalId)).not.toBeNull();
 
     const id = await importedWithoutPortalId(db);
-    await sink(db, portal).deleteLead(id);
+    await immediateSink(db, portal).deleteLead(id);
 
     expect(await new PlatformRepo({ db }).leads()).toHaveLength(0);
     expect(await portal.getLead(portalId)).toBeNull();
@@ -425,6 +431,108 @@ describe('leads the portal holds more than one copy of', () => {
 
     // Only the recorded copy — never the other lead's.
     expect(deleted).toEqual([61]);
+    db.close();
+  });
+});
+
+describe('publish on completion (the default)', () => {
+  it('does not put a freshly extracted lead into the portal', async () => {
+    // A lead nobody has looked at must not reach the sales team.
+    const db = freshDb();
+    const portal = new MockBitrixClient();
+    const [res] = await sink(db, portal).writeLeads([write()]);
+
+    expect(res!.bitrixLeadId).toBeGreaterThan(0);      // stored here
+    expect(portal.allLeads()).toHaveLength(0);          // but not there
+    const row = db.handle
+      .prepare('SELECT bitrix_lead_id FROM platform_leads WHERE id = ?')
+      .get(res!.bitrixLeadId!) as { bitrix_lead_id: number | null };
+    expect(row.bitrix_lead_id).toBeNull();
+    db.close();
+  });
+
+  it('creates the lead in the portal when it is marked Completed', async () => {
+    const db = freshDb();
+    const portal = new MockBitrixClient();
+    const s = sink(db, portal);
+    const [res] = await s.writeLeads([write()]);
+
+    await s.setLeadStatus(res!.bitrixLeadId!, 'CONVERTED');
+
+    const inPortal = portal.allLeads();
+    expect(inPortal).toHaveLength(1);
+    expect(String(inPortal[0]!.fields['TITLE'])).toContain('Anna Petrova');
+    // The portal id is recorded, so later edits and deletes can find it.
+    const row = db.handle
+      .prepare('SELECT bitrix_lead_id, bitrix_error FROM platform_leads WHERE id = ?')
+      .get(res!.bitrixLeadId!) as { bitrix_lead_id: number | null; bitrix_error: string | null };
+    expect(row.bitrix_lead_id).toBe(inPortal[0]!.id);
+    expect(row.bitrix_error).toBeNull();
+    db.close();
+  });
+
+  it('carries the lead detail across when publishing', async () => {
+    // The record is rebuilt from storage, so this proves nothing is lost
+    // between extraction and the moment an operator accepts the lead.
+    const db = freshDb();
+    const portal = new MockBitrixClient();
+    const s = sink(db, portal);
+    const [res] = await s.writeLeads([write()]);
+    await s.setLeadStatus(res!.bitrixLeadId!, 'CONVERTED');
+
+    const f = portal.allLeads()[0]!.fields as Record<string, unknown>;
+    expect(String(f['NAME'] ?? f['TITLE'])).toContain('Anna');
+    expect(String(f['COMPANY_TITLE'] ?? f['TITLE'])).toContain('Nordwind');
+    expect(JSON.stringify(f)).toContain('+49 30 1234567');
+    expect(JSON.stringify(f)).toContain('anna@nordwind.example');
+    db.close();
+  });
+
+  it('does not create a second copy when Completed is set twice', async () => {
+    const db = freshDb();
+    const portal = new MockBitrixClient();
+    const s = sink(db, portal);
+    const [res] = await s.writeLeads([write()]);
+
+    await s.setLeadStatus(res!.bitrixLeadId!, 'CONVERTED');
+    await s.setLeadStatus(res!.bitrixLeadId!, 'CONVERTED');
+
+    expect(portal.allLeads()).toHaveLength(1);
+    db.close();
+  });
+
+  it('reports and records a failure to publish', async () => {
+    // The operator approved the lead; if the CRM did not get it they must know.
+    const db = freshDb();
+    const portal = new MockBitrixClient();
+    portal.writeLeads = async () => { throw new Error('401 insufficient_scope'); };
+    const s = sink(db, portal);
+    const [res] = await s.writeLeads([write()]);
+
+    await expect(s.setLeadStatus(res!.bitrixLeadId!, 'CONVERTED'))
+      .rejects.toThrow(/not created in Bitrix24/i);
+
+    const row = db.handle
+      .prepare('SELECT bitrix_lead_id, bitrix_error FROM platform_leads WHERE id = ?')
+      .get(res!.bitrixLeadId!) as { bitrix_lead_id: number | null; bitrix_error: string | null };
+    expect(row.bitrix_lead_id).toBeNull();
+    expect(row.bitrix_error).toMatch(/insufficient_scope/);
+    // The stage change still stands locally — the operator's decision is kept.
+    const lead = await new PlatformRepo({ db }).lead(res!.bitrixLeadId!);
+    expect(lead!.statusId).toBe('CONVERTED');
+    db.close();
+  });
+
+  it('leaves the portal alone for any stage short of Completed', async () => {
+    const db = freshDb();
+    const portal = new MockBitrixClient();
+    const s = sink(db, portal);
+    const [res] = await s.writeLeads([write()]);
+
+    await s.setLeadStatus(res!.bitrixLeadId!, 'IN_PROCESS');
+    await s.setLeadStatus(res!.bitrixLeadId!, 'JUNK');
+
+    expect(portal.allLeads()).toHaveLength(0);
     db.close();
   });
 });

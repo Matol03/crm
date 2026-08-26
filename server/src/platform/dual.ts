@@ -37,7 +37,16 @@ export interface DualSinkOptions {
   onWarn?: (e: { event: string; localId: string; detail: string }) => void;
   /** Remove the portal copy when a lead is rejected here. Default true. */
   deleteOnReject?: boolean;
+  /**
+   * When a lead reaches the portal.
+   *   'on_complete' — only once an operator marks it Completed (default)
+   *   'immediate'   — as soon as the pipeline creates it
+   */
+  publish?: 'on_complete' | 'immediate';
 }
+
+/** The stage at which a lead is considered accepted and sent to the portal. */
+const COMPLETED_STATUS = 'CONVERTED';
 
 export class DualLeadSink implements BitrixClient {
   private readonly db: Db;
@@ -45,6 +54,7 @@ export class DualLeadSink implements BitrixClient {
   private readonly bitrix: BitrixClient & PortalLookup;
   private readonly onWarn: (e: { event: string; localId: string; detail: string }) => void;
   private readonly deleteOnReject: boolean;
+  private readonly publish: 'on_complete' | 'immediate';
 
   constructor(opts: DualSinkOptions) {
     this.db = opts.db;
@@ -52,6 +62,7 @@ export class DualLeadSink implements BitrixClient {
     this.bitrix = opts.bitrix;
     this.onWarn = opts.onWarn ?? (() => {});
     this.deleteOnReject = opts.deleteOnReject ?? true;
+    this.publish = opts.publish ?? 'on_complete';
   }
 
   /**
@@ -82,7 +93,14 @@ export class DualLeadSink implements BitrixClient {
     // 1. Primary write. Never skipped, never conditional.
     const primary = await this.platform.writeLeads(leads);
 
-    // 2. Mirror only what actually landed locally.
+    // 2. Nothing goes to the portal yet under 'on_complete'. A freshly
+    // extracted lead has not been looked at by anyone; publishing it
+    // immediately fills the CRM with records the sales team has to sort out,
+    // which is the opposite of what this service is for. It is published when
+    // an operator marks it Completed — see setLeadStatus.
+    if (this.publish === 'on_complete') return primary;
+
+    // Mirror only what actually landed locally.
     const mirrorable = leads.filter((l) =>
       primary.some((r) => r.localId === l.localId && r.bitrixLeadId != null && r.error == null),
     );
@@ -129,11 +147,19 @@ export class DualLeadSink implements BitrixClient {
       .prepare('SELECT local_id, bitrix_lead_id FROM platform_leads WHERE id = ?')
       .get(id) as { local_id: string; bitrix_lead_id: number | null } | undefined;
     if (!row) return;
+
+    // Completing a lead is what sends it to the portal. This is the only point
+    // at which a lead is created there, so a record only ever reaches the sales
+    // team after a person has looked at it and accepted it.
+    if (statusId === COMPLETED_STATUS && row.bitrix_lead_id == null) {
+      await this.publishToPortal(id, row.local_id);
+      return;
+    }
+
     // Same recovery as deletion: an unrecorded id does not mean no copy exists.
     const portalId = row.bitrix_lead_id ?? (await this.resolvePortalIds(id))[0] ?? null;
     if (portalId == null || !this.bitrix.setLeadStatus) return;
     row.bitrix_lead_id = portalId;
-    if (!this.bitrix.setLeadStatus) return;
 
     // Rejecting a lead here removes it from the portal rather than leaving a
     // rejected copy for the sales team to work. Configurable via deleteOnReject.
@@ -247,6 +273,50 @@ export class DualLeadSink implements BitrixClient {
       }
     }
     return [...found];
+  }
+
+  /**
+   * Create the lead in the portal, now that an operator has accepted it.
+   *
+   * The record is rebuilt from the stored lead rather than kept in memory: a
+   * lead may be completed days after it was extracted. A failure here is
+   * reported to the caller AND recorded on the lead, because the operator
+   * needs to know the CRM did not receive what they just approved.
+   */
+  private async publishToPortal(id: number, localId: string): Promise<void> {
+    const write = this.platform.toLeadWrite(id);
+    if (!write) return;
+
+    let results;
+    try {
+      results = await this.bitrix.writeLeads([write]);
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
+      this.recordMirror(localId, null, `not sent to Bitrix24: ${detail}`);
+      this.onWarn({ event: 'bitrix_publish_failed', localId, detail });
+      throw new Error(`Marked Completed here, but not created in Bitrix24: ${detail}`);
+    }
+
+    const result = results[0];
+    if (!result || result.bitrixLeadId == null || result.error) {
+      const detail = result?.error ?? 'the portal did not return a lead id';
+      this.recordMirror(localId, null, `not sent to Bitrix24: ${detail}`);
+      this.onWarn({ event: 'bitrix_publish_failed', localId, detail });
+      throw new Error(`Marked Completed here, but not created in Bitrix24: ${detail}`);
+    }
+
+    this.recordMirror(localId, result.bitrixLeadId, null);
+    // The portal defaults a new lead to its own initial status, so state the
+    // agreed one explicitly — the lead is complete, not new.
+    if (this.bitrix.setLeadStatus) {
+      try {
+        await this.bitrix.setLeadStatus(result.bitrixLeadId, COMPLETED_STATUS);
+      } catch (e) {
+        const detail = e instanceof Error ? e.message : String(e);
+        this.recordMirror(localId, result.bitrixLeadId, `status not synced: ${detail}`);
+        this.onWarn({ event: 'bitrix_status_sync_failed', localId, detail });
+      }
+    }
   }
 
   /**

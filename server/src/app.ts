@@ -116,6 +116,7 @@ export function buildApp(cfg: AppConfig, dbPath = cfg.dbPath): App {
       db,
       platform: new PlatformLeadStore({ db, initialStatusId: cfg.bitrixInitialStatusId }),
       bitrix: portal(),
+      publish: cfg.bitrixPublish,
       onWarn: (e) => console.warn(JSON.stringify({ level: 'warn', src: 'sink', ...e })),
     });
   } else {

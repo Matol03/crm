@@ -15,6 +15,8 @@ export type LlmProvider = 'gemini' | 'deepseek';
 export type OcrProvider = 'gemini' | 'deepseek';
 /** Where finished leads are written. */
 export type LeadSink = 'platform' | 'bitrix' | 'both';
+/** When a lead reaches the portal, under LEAD_SINK=both. */
+export type BitrixPublish = 'on_complete' | 'immediate';
 
 export interface AppConfig {
   /**
@@ -23,6 +25,12 @@ export interface AppConfig {
    * 'both' stores locally AND mirrors to the portal (local write is primary).
    */
   leadSink: LeadSink;
+  /**
+   * 'on_complete' (default): a lead is created in Bitrix24 only once an
+   * operator marks it Completed, so nothing reaches the sales team unreviewed.
+   * 'immediate': restores the old behaviour of mirroring on extraction.
+   */
+  bitrixPublish: BitrixPublish;
   bitrixMode: Mode;
   msgraphMode: Mode;
   llmMode: Mode;
@@ -127,6 +135,7 @@ export function loadConfig(raw?: Record<string, string | undefined>): AppConfig 
   const cfg: AppConfig = {
     leadSink:
       env.LEAD_SINK === 'bitrix' ? 'bitrix' : env.LEAD_SINK === 'both' ? 'both' : 'platform',
+    bitrixPublish: env.BITRIX_PUBLISH === 'immediate' ? 'immediate' : 'on_complete',
     bitrixMode: mode(env.BITRIX_MODE),
     msgraphMode: mode(env.MSGRAPH_MODE),
     llmMode: mode(env.LLM_MODE),
@@ -212,6 +221,7 @@ export function validateConfig(cfg: AppConfig): void {
 export function redactedSummary(cfg: AppConfig): Record<string, unknown> {
   return {
     leadSink: cfg.leadSink,
+    bitrixPublish: cfg.bitrixPublish,
     bitrixMode: cfg.bitrixMode,
     msgraphMode: cfg.msgraphMode,
     llmMode: cfg.llmMode,

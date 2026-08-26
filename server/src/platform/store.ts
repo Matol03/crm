@@ -247,6 +247,85 @@ export class PlatformLeadStore implements BitrixClient {
     return seeded ? seeded.label : String(raw);
   }
 
+  /**
+   * Rebuild a CRM write from a stored lead.
+   *
+   * Needed because leads are no longer sent to the portal as they arrive: they
+   * are published when an operator marks them Completed, which can be days
+   * later and long after the original extraction is out of scope. Everything
+   * required is on the row, except the list VALUES, which are stored as human
+   * labels here and must be turned back into the portal's option ids.
+   *
+   * Returns null when the lead no longer exists.
+   */
+  toLeadWrite(id: number): LeadWrite | null {
+    const row = this.db.handle
+      .prepare('SELECT * FROM platform_leads WHERE id = ?')
+      .get(id) as Record<string, unknown> | undefined;
+    if (!row) return null;
+
+    const localId = String(row['local_id'] ?? `platform-${id}`);
+    const sessionId = String(row['session_id'] ?? '');
+
+    // Message ids and the channel come from the pipeline rows that built this
+    // lead, so the CRM record keeps its trail back to Teams.
+    const localIds = (this.db.handle
+      .prepare('SELECT local_id FROM platform_lead_sources WHERE platform_lead_id = ?')
+      .all(id) as Array<{ local_id: string }>).map((r) => r.local_id);
+    const messageIds: string[] = [];
+    for (const lid of localIds.length ? localIds : [localId]) {
+      const lead = this.db.getLead(lid);
+      const parsed = safeParse(lead?.fields_json ?? null) as { messageIds?: string[] } | null;
+      for (const m of parsed?.messageIds ?? []) if (!messageIds.includes(m)) messageIds.push(m);
+    }
+    const session = sessionId ? this.db.getSession(sessionId) : null;
+    const bundle = safeParse(session?.raw_payload_json ?? null) as
+      | { channel?: { teamsGroupId?: string } }
+      | null;
+
+    const listFields = { leadTypeId: this.optionId('UF_CRM_LEAD_TYPE', row['lead_type']) ?? 47 } as
+      LeadWrite['listFields'];
+    const region = this.optionId('UF_CRM_REGION', row['region']);
+    if (region != null) listFields.regionId = region;
+    const interest = this.optionId('UF_CRM_PRODUCT_INTEREST', row['product_interest']);
+    if (interest != null) listFields.productInterestId = interest;
+    const priority = this.optionId('UF_CRM_PRIORITY', row['priority']);
+    if (priority != null) listFields.priorityId = priority;
+
+    return {
+      localId,
+      sessionId,
+      title: String(row['title'] ?? ''),
+      assignedById: Number(row['owner_id'] ?? 0) || 0,
+      name: str(row['name']),
+      company: str(row['company']),
+      position: str(row['position']),
+      country: str(row['country']),
+      phones: parseComm(String(row['phones_json'] ?? '[]')).map((value) => ({ value, type: 'WORK' })),
+      emails: parseComm(String(row['emails_json'] ?? '[]')).map((value) => ({ value, type: 'WORK' })),
+      listFields,
+      verbatim: String(row['verbatim'] ?? ''),
+      aiSummaryRu: String(row['ai_summary'] ?? ''),
+      service: {
+        teamsGroupId: bundle?.channel?.teamsGroupId ?? '',
+        teamsMessageIds: messageIds,
+        teamsAuthor: String(row['teams_author'] ?? ''),
+      },
+      warnings: [],
+      needsAttachmentRetry: false,
+    };
+  }
+
+  /** Turn a stored human label back into the portal's option id. */
+  private optionId(fieldCode: string, label: unknown): number | null {
+    const wanted = String(label ?? '').trim().toLowerCase();
+    if (!wanted) return null;
+    const cached = this.db.getCachedListValues(fieldCode).find((v) => v.label.toLowerCase() === wanted);
+    if (cached) return cached.bitrix_id;
+    const seeded = (SEED_USERFIELD_VALUES[fieldCode] ?? []).find((v) => v.label.toLowerCase() === wanted);
+    return seeded ? seeded.id : null;
+  }
+
   // ── internals ────────────────────────────────────────────────
 
   private insert(lead: LeadWrite, phones: string[], emails: string[]): number {
@@ -343,3 +422,10 @@ function parseComm(json: string): string[] {
 }
 
 const unique = (xs: string[]) => Array.from(new Set(xs.filter(Boolean)));
+
+const str = (v: unknown): string | null => (v == null || v === '' ? null : String(v));
+
+function safeParse(json: string | null): unknown {
+  if (!json) return null;
+  try { return JSON.parse(json); } catch { return null; }
+}
