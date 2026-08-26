@@ -123,7 +123,12 @@ export class DualLeadSink implements BitrixClient {
     const row = this.db.handle
       .prepare('SELECT local_id, bitrix_lead_id FROM platform_leads WHERE id = ?')
       .get(id) as { local_id: string; bitrix_lead_id: number | null } | undefined;
-    if (!row?.bitrix_lead_id || !this.bitrix.setLeadStatus) return;
+    if (!row) return;
+    // Same recovery as deletion: an unrecorded id does not mean no copy exists.
+    const portalId = row.bitrix_lead_id ?? (await this.resolvePortalId(id));
+    if (portalId == null || !this.bitrix.setLeadStatus) return;
+    row.bitrix_lead_id = portalId;
+    if (!this.bitrix.setLeadStatus) return;
 
     // Rejecting a lead here removes it from the portal rather than leaving a
     // rejected copy for the sales team to work. Configurable via deleteOnReject.
@@ -162,10 +167,21 @@ export class DualLeadSink implements BitrixClient {
    * because silently keeping a lead the operator asked to delete is worse.
    */
   async deleteLead(id: number): Promise<void> {
-    const bitrixId = this.platform.bitrixIdFor(id);
+    // Resolve the portal copy BEFORE the local row is gone: afterwards there is
+    // nothing left to look it up by.
+    const bitrixId = await this.resolvePortalId(id);
     await this.platform.deleteLead(id);
 
-    if (bitrixId == null || !this.bitrix.deleteLead) return;
+    if (!this.bitrix.deleteLead) return;
+    if (bitrixId == null) {
+      // Previously this returned silently and the portal copy was left behind
+      // with no indication. Say so: an orphan the sales team still works is
+      // exactly what deleting was meant to prevent.
+      this.onWarn({ event: 'bitrix_copy_not_found', localId: String(id), detail: 'no portal id known' });
+      throw new Error(
+        'Lead removed here, but no matching lead was found in Bitrix24 — check the portal manually.',
+      );
+    }
     try {
       await this.bitrix.deleteLead(bitrixId);
     } catch (e) {
@@ -175,9 +191,33 @@ export class DualLeadSink implements BitrixClient {
     }
   }
 
+  /**
+   * The portal id for a lead.
+   *
+   * Leads created before this service recorded the mirror id — and any whose
+   * mirror write failed — have no stored id, yet a copy may well exist in the
+   * portal. Falling straight through to "nothing to delete" leaves that copy
+   * behind, so ask the portal to find it by contact details, which is how it
+   * was matched in the first place.
+   */
+  private async resolvePortalId(id: number): Promise<number | null> {
+    const stored = this.platform.bitrixIdFor(id);
+    if (stored != null) return stored;
+
+    const comm = this.platform.commsFor(id);
+    if (!comm.phones.length && !comm.emails.length) return null;
+    try {
+      const match = await this.bitrix.findDuplicate(comm);
+      return match?.bitrixLeadId ?? null;
+    } catch {
+      // A lookup failure must not be read as "there is no copy".
+      return null;
+    }
+  }
+
   /** Fold one lead into another locally, then remove the duplicate's portal copy. */
   async mergeLeads(survivorId: number, duplicateId: number): Promise<void> {
-    const duplicateBitrixId = this.platform.bitrixIdFor(duplicateId);
+    const duplicateBitrixId = await this.resolvePortalId(duplicateId);
     await this.platform.mergeLeads(survivorId, duplicateId);
 
     if (duplicateBitrixId == null || !this.bitrix.deleteLead) return;

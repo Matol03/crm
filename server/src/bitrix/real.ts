@@ -135,9 +135,23 @@ export class RealBitrixClient implements BitrixClient {
   }
 
   async getLead(id: number): Promise<BitrixLeadRecord | null> {
-    const env = await this.call<Record<string, unknown> | null>('crm.lead.get', { id });
-    if (!env.result) return null;
-    return { id, fields: env.result };
+    try {
+      const env = await this.call<Record<string, unknown> | null>('crm.lead.get', { id });
+      if (!env.result) return null;
+      return { id, fields: env.result };
+    } catch (e) {
+      // The portal answers a missing lead with 400 "Not found". The contract
+      // says a missing lead is null, not an exception — throwing here turned a
+      // routine "does this still exist?" check into a crash.
+      if (e instanceof BitrixCallError && /not found/i.test(e.description ?? '')) return null;
+      throw e;
+    }
+  }
+
+  /** Locate a lead in the portal by its contact details. */
+  async findLeadByComm(comm: { phones: string[]; emails: string[] }): Promise<number | null> {
+    const match = await this.findDuplicate(comm);
+    return match?.bitrixLeadId ?? null;
   }
 
   // ── writes (batched) ─────────────────────────────────────────

@@ -226,3 +226,53 @@ describe('deleting and merging', () => {
     db.close();
   });
 });
+
+describe('deleting a lead whose portal id was never recorded', () => {
+  /** Store a lead the way the backfill did: locally, with no portal id. */
+  async function importedWithoutPortalId(db: Db) {
+    const store = new PlatformLeadStore({ db });
+    const [res] = await store.writeLeads([write()]);
+    db.handle.prepare('UPDATE platform_leads SET bitrix_lead_id = NULL').run();
+    return res!.bitrixLeadId!;
+  }
+
+  it('finds the portal copy by contact details and removes it', async () => {
+    // The reported bug: imported leads had no recorded portal id, so deletion
+    // skipped the portal silently and left the copy behind.
+    const db = freshDb();
+    const portal = new MockBitrixClient();
+    // The copy exists in the portal, created during the earlier CRM-only run.
+    const [existing] = await portal.writeLeads([write({ localId: 'portal-copy' })]);
+    const portalId = existing!.bitrixLeadId!;
+    expect(await portal.getLead(portalId)).not.toBeNull();
+
+    const id = await importedWithoutPortalId(db);
+    await sink(db, portal).deleteLead(id);
+
+    expect(await new PlatformRepo({ db }).leads()).toHaveLength(0);
+    expect(await portal.getLead(portalId)).toBeNull();
+    db.close();
+  });
+
+  it('says so when no portal copy can be found, instead of reporting success', async () => {
+    // Silence here is what let an orphan survive unnoticed.
+    const db = freshDb();
+    const portal = new MockBitrixClient();   // portal has no matching lead
+    const id = await importedWithoutPortalId(db);
+
+    await expect(sink(db, portal).deleteLead(id)).rejects.toThrow(/no matching lead was found/i);
+    // The local deletion still stands.
+    expect(await new PlatformRepo({ db }).leads()).toHaveLength(0);
+    db.close();
+  });
+
+  it('does not treat a failed lookup as "there is no copy"', async () => {
+    const db = freshDb();
+    const portal = new MockBitrixClient();
+    portal.findDuplicate = async () => { throw new Error('portal unreachable'); };
+    const id = await importedWithoutPortalId(db);
+
+    await expect(sink(db, portal).deleteLead(id)).rejects.toThrow(/no matching lead was found/i);
+    db.close();
+  });
+});

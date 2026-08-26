@@ -192,6 +192,17 @@ export class PlatformLeadStore implements BitrixClient {
     await this.deleteLead(duplicateId);
   }
 
+  /** A lead's contact details, for locating its copy in the portal. */
+  commsFor(id: number): { phones: string[]; emails: string[] } {
+    const row = this.db.handle
+      .prepare('SELECT phones_json, emails_json FROM platform_leads WHERE id = ?')
+      .get(id) as { phones_json: string; emails_json: string } | undefined;
+    return {
+      phones: parseComm(row?.phones_json ?? '[]'),
+      emails: parseComm(row?.emails_json ?? '[]'),
+    };
+  }
+
   /** The mirrored portal id for a lead, when it has one. */
   bitrixIdFor(id: number): number | null {
     const row = this.db.handle
