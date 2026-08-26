@@ -146,7 +146,7 @@ export function loadConfig(raw?: Record<string, string | undefined>): AppConfig 
 
     geminiApiKey: env.GEMINI_API_KEY ?? '',
     geminiBaseUrl: env.GEMINI_BASE_URL ?? 'https://generativelanguage.googleapis.com',
-    geminiModel: env.GEMINI_MODEL ?? 'gemini-3.6-flash',
+    geminiModel: env.GEMINI_MODEL ?? 'gemini-2.5-flash',
 
     graph: {
       tenantId: env.GRAPH_TENANT_ID ?? '',

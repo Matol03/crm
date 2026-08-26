@@ -14,11 +14,11 @@ import {
   EXTRACTION_SYSTEM,
   extractionUser,
 } from './prompts.js';
+import { generateContent, candidateText, modelChain } from './geminiEndpoint.js';
 import {
   validateSegmentation,
   validateExtraction,
   completeJson,
-  fetchWithRetry,
   type SegItem,
   type ChatMessage,
   type ChatTransport,
@@ -66,9 +66,7 @@ export class GeminiLlmClient implements LlmClient {
  * JSON mode via responseMimeType so the model returns a bare JSON object.
  */
 function defaultGeminiTransport(opts: GeminiLlmOptions): ChatTransport {
-  const baseUrl = (opts.baseUrl ?? 'https://generativelanguage.googleapis.com').replace(/\/$/, '');
-  const model = opts.model ?? 'gemini-3.6-flash';
-  const doFetch = opts.fetchImpl ?? fetch;
+  const models = modelChain(opts.model);
   return async (messages) => {
     const systemText = messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n\n');
     const contents = messages
@@ -81,15 +79,15 @@ function defaultGeminiTransport(opts: GeminiLlmOptions): ChatTransport {
     };
     if (systemText) body.systemInstruction = { parts: [{ text: systemText }] };
 
-    const res = await fetchWithRetry(doFetch, `${baseUrl}/v1beta/models/${model}:generateContent?key=${opts.apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+    const json = await generateContent({
+      apiKey: opts.apiKey,
+      ...(opts.baseUrl ? { baseUrl: opts.baseUrl } : {}),
+      models,
+      ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
+      body,
+      onFallback: (e) =>
+        console.warn(JSON.stringify({ level: 'warn', src: 'gemini', code: 'model_fallback', ...e })),
     });
-    if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);
-    const json = (await res.json()) as {
-      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-    };
-    return json.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('') ?? '';
+    return candidateText(json);
   };
 }

@@ -13,7 +13,7 @@
  */
 
 import type { AsrClient } from '../contracts/adapters.js';
-import { fetchWithRetry } from '../llm/validate.js';
+import { generateContent, candidateText, modelChain } from '../llm/geminiEndpoint.js';
 
 const ASR_PROMPT = `Transcribe this audio recording verbatim.
 Rules:
@@ -86,35 +86,28 @@ export function normaliseMime(mimeType: string): string {
 }
 
 function defaultAudioTransport(opts: GeminiAsrOptions): AudioTransport {
-  const baseUrl = (opts.baseUrl ?? 'https://generativelanguage.googleapis.com').replace(/\/$/, '');
-  const model = opts.model ?? 'gemini-3.6-flash';
-  const doFetch = opts.fetchImpl ?? fetch;
-
+  const models = modelChain(opts.model);
   return async (bytes, mimeType) => {
-    const res = await fetchWithRetry(
-      doFetch,
-      `${baseUrl}/v1beta/models/${model}:generateContent?key=${opts.apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                { text: ASR_PROMPT },
-                { inline_data: { mime_type: mimeType, data: Buffer.from(bytes).toString('base64') } },
-              ],
-            },
-          ],
-          // Zero temperature: a transcript must be reproducible, not creative.
-          generationConfig: { temperature: 0 },
-        }),
+    const json = await generateContent({
+      apiKey: opts.apiKey,
+      ...(opts.baseUrl ? { baseUrl: opts.baseUrl } : {}),
+      models,
+      ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
+      body: {
+        contents: [
+          {
+            parts: [
+              { text: ASR_PROMPT },
+              { inline_data: { mime_type: mimeType, data: Buffer.from(bytes).toString('base64') } },
+            ],
+          },
+        ],
+        // Zero temperature: a transcript must be reproducible, not creative.
+        generationConfig: { temperature: 0 },
       },
-    );
-    if (!res.ok) throw new Error(`Gemini audio HTTP ${res.status}`);
-    const json = (await res.json()) as {
-      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-    };
-    return json.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('') ?? '';
+      onFallback: (e) =>
+        console.warn(JSON.stringify({ level: 'warn', src: 'gemini', code: 'model_fallback', ...e })),
+    });
+    return candidateText(json);
   };
 }
