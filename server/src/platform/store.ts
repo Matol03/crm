@@ -137,6 +137,7 @@ export class PlatformLeadStore implements BitrixClient {
 
   /** Remove a lead from the platform's own store. */
   async deleteLead(id: number): Promise<void> {
+    this.db.handle.prepare('DELETE FROM platform_lead_sources WHERE platform_lead_id = ?').run(id);
     const info = this.db.handle.prepare('DELETE FROM platform_leads WHERE id = ?').run(id);
     if (Number(info.changes ?? 0) === 0) throw new Error(`lead ${id} not found`);
   }
@@ -183,6 +184,11 @@ export class PlatformLeadStore implements BitrixClient {
         JSON.stringify(phones), JSON.stringify(emails),
         survivorId,
       );
+    // The absorbed lead's sources now belong to the survivor, so its evidence
+    // does not vanish with the row.
+    this.db.handle
+      .prepare('UPDATE OR IGNORE platform_lead_sources SET platform_lead_id = ? WHERE platform_lead_id = ?')
+      .run(survivorId, duplicateId);
     await this.deleteLead(duplicateId);
   }
 
@@ -240,6 +246,7 @@ export class PlatformLeadStore implements BitrixClient {
         lead.verbatim, lead.aiSummaryRu, lead.service.teamsAuthor,
       );
     const row = this.db.handle.prepare('SELECT last_insert_rowid() AS id').get() as { id: number };
+    this.linkSource(row.id, lead.localId);
     return row.id;
   }
 
@@ -276,6 +283,16 @@ export class PlatformLeadStore implements BitrixClient {
         JSON.stringify(mergedPhones), JSON.stringify(mergedEmails),
         lead.verbatim, lead.aiSummaryRu, id,
       );
+    // The later message contributed to this lead too. Without this the console
+    // kept showing only the first session, so a follow-up looked unprocessed.
+    this.linkSource(id, lead.localId);
+  }
+
+  /** Note that a pipeline row contributed to a platform lead. */
+  private linkSource(platformLeadId: number, localId: string): void {
+    this.db.handle
+      .prepare('INSERT OR IGNORE INTO platform_lead_sources (platform_lead_id, local_id) VALUES (?, ?)')
+      .run(platformLeadId, localId);
   }
 }
 

@@ -140,3 +140,17 @@ CREATE TABLE IF NOT EXISTS duplicate_decisions (
   decided_by TEXT,
   decided_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Every pipeline row that contributed to a platform lead.
+-- A lead is often built from several sessions: the manager sends a card, then
+-- later adds context, or re-sends the same card with more detail. Keeping only
+-- the first row made everything the later messages contributed invisible in the
+-- console — the lead looked unprocessed even though its data had been merged.
+CREATE TABLE IF NOT EXISTS platform_lead_sources (
+  platform_lead_id INTEGER NOT NULL,
+  local_id         TEXT NOT NULL,
+  added_at         TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (platform_lead_id, local_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_pls_local ON platform_lead_sources(local_id);

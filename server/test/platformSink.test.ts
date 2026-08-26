@@ -376,3 +376,87 @@ describe('needs-attention links', () => {
     db.close();
   });
 });
+
+describe('a lead built from several messages', () => {
+  it('shows what a later message contributed, not just the first', async () => {
+    // The reported symptom: a manager sent a card, then followed up with more
+    // context. The follow-up merged into the same lead, but the console kept
+    // showing only the first session — so the message looked unprocessed.
+    const db = freshDb();
+    const store = new PlatformLeadStore({ db });
+
+    const first: SessionBundle = {
+      sessionId: 's1', channel: { teamsGroupId: 'g', channelId: 'c' },
+      author: { teamsUserId: 'u', email: 'rep@example.com', displayName: 'Rep' },
+      sessionWindow: { openedAt: '2026-08-27T10:00:00Z', closedAt: '2026-08-27T10:01:00Z' },
+      items: [{ messageId: 'm1', timestamp: '2026-08-27T10:00:00Z', type: 'image', ocrText: 'Anna Petrova' }],
+    };
+    const later: SessionBundle = {
+      ...first,
+      sessionId: 's2',
+      items: [{ messageId: 'm2', timestamp: '2026-08-27T10:20:00Z', type: 'text', text: 'Interested in Integrating System' }],
+    };
+    db.upsertSession(first, 'received');
+    db.upsertSession(later, 'received');
+
+    db.insertLead({
+      id: 'a', sessionId: 's1', title: 'Anna Petrova', status: 'done',
+      fieldsJson: JSON.stringify({ gated: { confidence: { name: 0.9 } }, messageIds: ['m1'] }),
+      verbatim: '', aiSummaryRu: '', warningsJson: JSON.stringify(['first warning']),
+      needsAttachmentRetry: false,
+    });
+    db.insertLead({
+      id: 'b', sessionId: 's2', title: 'Anna Petrova', status: 'done',
+      fieldsJson: JSON.stringify({
+        gated: { productInterestRaw: 'Integrating System', provenance: { name: { messageId: 'm2' } } },
+        messageIds: ['m2'],
+      }),
+      verbatim: '', aiSummaryRu: '', warningsJson: JSON.stringify(['second warning']),
+      needsAttachmentRetry: false,
+    });
+
+    // No productInterestId: nothing matched the CRM list, exactly as in the
+    // real case, so the column stays blank and the raw value must show through.
+    const bare = { leadTypeId: 47 };
+    const [created] = await store.writeLeads([write({ localId: 'a', listFields: bare })]);
+    // Same phone and author -> merges into the same lead.
+    const [merged] = await store.writeLeads([write({ localId: 'b', sessionId: 's2', listFields: bare })]);
+    expect(merged!.updatedExisting).toBe(true);
+
+    const repo = new PlatformRepo({ db });
+    const detail = await repo.lead(created!.bitrixLeadId!);
+
+    // Both messages are shown as sources, in time order.
+    expect(detail!.sourceMessages.map((m) => m.messageId)).toEqual(['m1', 'm2']);
+    // Warnings from both sessions survive.
+    expect(detail!.warnings).toContain('first warning');
+    expect(detail!.warnings).toContain('second warning');
+    // Provenance comes from the newest row that recorded any.
+    expect((detail!.provenance as Record<string, { messageId: string }>)['name']!.messageId).toBe('m2');
+    // And the value only the later message supplied is visible.
+    const [listed] = await repo.leads();
+    expect(listed!.productInterest).toBe('Integrating System');
+    db.close();
+  });
+
+  it('keeps the absorbed lead evidence when two leads are merged', async () => {
+    const db = freshDb();
+    const store = new PlatformLeadStore({ db });
+    const [keep] = await store.writeLeads([write({ localId: 'a', emails: [] })]);
+    const [drop] = await store.writeLeads([
+      write({
+        localId: 'b', phones: [{ value: '+49 89 111', type: 'WORK' }], emails: [],
+        service: { teamsGroupId: 'g', teamsMessageIds: [], teamsAuthor: 'other@example.com' },
+      }),
+    ]);
+
+    await store.mergeLeads(keep!.bitrixLeadId!, drop!.bitrixLeadId!);
+
+    const sources = db.handle
+      .prepare('SELECT local_id FROM platform_lead_sources WHERE platform_lead_id = ? ORDER BY local_id')
+      .all(keep!.bitrixLeadId!) as Array<{ local_id: string }>;
+    // The absorbed lead's evidence moved across rather than vanishing with it.
+    expect(sources.map((s) => s.local_id)).toEqual(['a', 'b']);
+    db.close();
+  });
+});

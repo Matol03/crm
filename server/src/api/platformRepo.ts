@@ -60,6 +60,23 @@ export class PlatformRepo {
     this.portalOrigin = portalBase(opts.bitrixWebhookUrl);
   }
 
+  /**
+   * Every pipeline row that contributed to this lead, oldest first. A lead is
+   * often built from several sessions — a card, then later context — and reading
+   * only the first row hid everything the later messages added.
+   */
+  private contributingRows(platformId: number, fallbackLocalId: string | null) {
+    const ids = (this.db.handle
+      .prepare('SELECT local_id FROM platform_lead_sources WHERE platform_lead_id = ? ORDER BY added_at')
+      .all(platformId) as Array<{ local_id: string }>).map((r) => r.local_id);
+    if (!ids.length && fallbackLocalId) ids.push(fallbackLocalId);
+
+    return ids
+      .map((id) => this.db.getLead(id))
+      .filter((r): r is NonNullable<typeof r> => r != null)
+      .sort((a, b) => a.created_at.localeCompare(b.created_at));
+  }
+
   /** Owner id -> display name, from the Teams->owner mapping table. */
   private owners(): Map<number, string> {
     const rows = this.db.handle
@@ -85,19 +102,40 @@ export class PlatformRepo {
     if (!row) return null;
 
     const base = this.toConsoleLead(row, this.owners());
-    const local = this.db.getLead(row.local_id);
-    const fields = safeJson(local?.fields_json ?? null) as
-      | { gated?: { provenance?: Record<string, unknown> } }
-      | null;
+    const rows = this.contributingRows(row.id, row.local_id);
+
+    // Provenance from the most recent row that recorded any — the newest
+    // message is the one whose attribution the reader is checking.
+    let provenance: Record<string, unknown> | null = null;
+    const warnings: string[] = [];
+    const messages: ConsoleLeadDetail['sourceMessages'] = [];
+    const seenMessageIds = new Set<string>();
+
+    for (const r of rows) {
+      const fields = safeJson(r.fields_json) as
+        | { gated?: { provenance?: Record<string, unknown> } }
+        | null;
+      if (fields?.gated?.provenance) provenance = fields.gated.provenance;
+
+      for (const w of (safeJson(r.warnings_json) as string[] | null) ?? []) {
+        if (!warnings.includes(w)) warnings.push(w);
+      }
+      for (const m of this.sourceMessages(r.session_id, r.id)) {
+        if (seenMessageIds.has(m.messageId)) continue;
+        seenMessageIds.add(m.messageId);
+        messages.push(m);
+      }
+    }
+    messages.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 
     return {
       ...base,
       verbatim: row.verbatim ?? '',
       aiSummary: row.ai_summary ?? '',
-      warnings: (safeJson(local?.warnings_json ?? null) as string[] | null) ?? [],
+      warnings,
       confidence: base.confidence,
-      provenance: fields?.gated?.provenance ?? null,
-      sourceMessages: this.sourceMessages(row.session_id, row.local_id),
+      provenance,
+      sourceMessages: messages,
     };
   }
 
@@ -231,6 +269,13 @@ export class PlatformRepo {
       id: number; local_id: string; title: string | null;
     }>;
     const byLocalId = new Map(rows.map((r) => [r.local_id, r.id]));
+    // Rows that contributed to a lead without being its original: the exact
+    // answer for a merged lead, and better than guessing from the title.
+    for (const link of this.db.handle
+      .prepare('SELECT platform_lead_id, local_id FROM platform_lead_sources')
+      .all() as Array<{ platform_lead_id: number; local_id: string }>) {
+      if (!byLocalId.has(link.local_id)) byLocalId.set(link.local_id, link.platform_lead_id);
+    }
 
     // A pipeline row whose lead was MERGED into another (same manager, same
     // phone/e-mail) has no row of its own, because the merge kept the first
@@ -279,25 +324,32 @@ export class PlatformRepo {
   // ── mapping ──────────────────────────────────────────────────
 
   private toConsoleLead(r: PlatformRow, owners: Map<number, string>): ConsoleLead {
-    const local = this.db.getLead(r.local_id);
-    const parsed = safeJson(local?.fields_json ?? null) as
-      | {
-          gated?: {
-            confidence?: Record<string, number>;
-            productInterestRaw?: string | null;
-            priorityRaw?: string | null;
-          };
-        }
-      | null;
-    const gated = parsed?.gated;
+    // Read every contributing row, newest last, so a value the FIRST message
+    // lacked but a later one supplied is still shown. Previously only the first
+    // row was consulted and later context silently disappeared.
+    type Gated = {
+      confidence?: Record<string, number>;
+      productInterestRaw?: string | null;
+      priorityRaw?: string | null;
+    };
+    const gatedRows = this.contributingRows(r.id, r.local_id)
+      .map((row) => (safeJson(row.fields_json) as { gated?: Gated } | null)?.gated)
+      .filter((g): g is Gated => g != null);
+
+    const gated: Gated = {};
+    for (const g of gatedRows) {
+      if (g.confidence && Object.keys(g.confidence).length) gated.confidence = g.confidence;
+      if (g.productInterestRaw) gated.productInterestRaw = g.productInterestRaw;
+      if (g.priorityRaw) gated.priorityRaw = g.priorityRaw;
+    }
     const status = STATUSES[r.status_id] ?? { label: r.status_id, semantic: 'P' };
 
     // The stored column holds a value matched to Bitrix's dropdown list. When
     // nothing matched it is null — but the platform has no fixed option list,
     // so show what was actually extracted rather than dropping it. This is the
     // real captured text, never an invented one.
-    const productInterest = r.product_interest ?? gated?.productInterestRaw ?? null;
-    const priority = r.priority ?? gated?.priorityRaw ?? null;
+    const productInterest = r.product_interest ?? gated.productInterestRaw ?? null;
+    const priority = r.priority ?? gated.priorityRaw ?? null;
 
     return {
       bitrixLeadId: r.id,
@@ -323,7 +375,7 @@ export class PlatformRepo {
       // Every platform lead came through the pipeline by construction.
       fromPipeline: true,
       localId: r.local_id,
-      confidence: gated?.confidence ?? null,
+      confidence: gated.confidence ?? null,
       // Mirror state (LEAD_SINK=both). Null everywhere else, so the console
       // simply shows nothing rather than implying a portal that isn't in use.
       crmLeadId: r.bitrix_lead_id,

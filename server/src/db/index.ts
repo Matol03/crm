@@ -86,6 +86,23 @@ export class Db {
     this.ensureColumn('platform_leads', 'bitrix_lead_id', 'INTEGER');
     this.ensureColumn('platform_leads', 'bitrix_synced_at', 'TEXT');
     this.ensureColumn('platform_leads', 'bitrix_error', 'TEXT');
+    this.backfillLeadSources();
+  }
+
+  /**
+   * Seed platform_lead_sources from the single local_id each lead already
+   * carries, so existing leads keep working after the table is introduced.
+   * Idempotent: INSERT OR IGNORE against the composite primary key.
+   */
+  private backfillLeadSources(): void {
+    const hasTable = this.handle
+      .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name = 'platform_leads'`)
+      .get();
+    if (!hasTable) return;
+    this.handle.exec(
+      `INSERT OR IGNORE INTO platform_lead_sources (platform_lead_id, local_id)
+       SELECT id, local_id FROM platform_leads WHERE local_id IS NOT NULL`,
+    );
   }
 
   /** Add a column only when the table exists and lacks it. */
