@@ -31,7 +31,7 @@ interface PlatformRow {
   id: number; local_id: string; session_id: string; title: string | null;
   name: string | null; company: string | null; position: string | null; country: string | null;
   owner_id: number | null; status_id: string;
-  lead_type: string | null; region: string | null; exhibition: string | null;
+  lead_type: string | null; region: string | null;
   product_interest: string | null; priority: string | null;
   phones_json: string; emails_json: string;
   verbatim: string | null; ai_summary: string | null; teams_author: string | null;
@@ -364,7 +364,6 @@ export class PlatformRepo {
       statusSemantic: status.semantic,
       leadType: r.lead_type,
       region: r.region,
-      exhibition: r.exhibition,
       productInterest,
       priority,
       phones: parseArr(r.phones_json),

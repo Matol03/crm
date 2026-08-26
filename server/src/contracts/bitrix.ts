@@ -11,7 +11,6 @@ export interface LeadListFields {
   /** UF_CRM_LEAD_TYPE — never empty; Partner=45 / Customer=47 (seed). */
   leadTypeId: number;
   regionId?: number;
-  exhibitionId?: number;
   productInterestId?: number;
   priorityId?: number;
 }

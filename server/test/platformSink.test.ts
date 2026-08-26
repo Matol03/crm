@@ -26,7 +26,6 @@ function write(over: Partial<LeadWrite> = {}): LeadWrite {
       leadTypeId: 47,
       priorityId: 83,
       productInterestId: 73,
-      exhibitionId: 63,
       regionId: 49,
     },
     verbatim: 'met at booth',
@@ -251,15 +250,6 @@ describe('lead status journey', () => {
     db.close();
   });
 
-  it('records the campaign as the exhibition when no list option matches', async () => {
-    const db = freshDb();
-    const store = new PlatformLeadStore({ db, campaignExhibition: 'Qazdream Test Project' });
-    // No exhibitionId: the portal would blank it, the platform should not.
-    const [res] = await store.writeLeads([write({ listFields: { leadTypeId: 47 } })]);
-    const lead = await new PlatformRepo({ db }).lead(res!.bitrixLeadId!);
-    expect(lead!.exhibition).toBe('Qazdream Test Project');
-    db.close();
-  });
 });
 
 describe('name duplicate detection', () => {

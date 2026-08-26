@@ -9,7 +9,6 @@ import type { LeadListFields } from '../contracts/bitrix.js';
 import { mapToListId, type ListValue } from './index.js';
 
 export interface Campaign {
-  exhibition: string;
   source: string;
 }
 
@@ -47,15 +46,6 @@ export function buildListFields(
   const region = mapToListId('UF_CRM_REGION', gated.country, values.UF_CRM_REGION ?? [], fuzzyThreshold);
   if (region.id != null) listFields.regionId = region.id;
   else if (gated.country) warnings.push(`region for "${gated.country}" not in reference list, left blank`);
-
-  const exhibition = mapToListId(
-    'UF_CRM_EXHIBITION',
-    campaign.exhibition,
-    values.UF_CRM_EXHIBITION ?? [],
-    fuzzyThreshold,
-  );
-  if (exhibition.id != null) listFields.exhibitionId = exhibition.id;
-  else if (campaign.exhibition) warnings.push(`exhibition "${campaign.exhibition}" not in reference list, left blank`);
 
   const interest = mapToListId(
     'UF_CRM_PRODUCT_INTEREST',

@@ -110,15 +110,11 @@ export function buildApp(cfg: AppConfig, dbPath = cfg.dbPath): App {
   //   both     — stored here AND mirrored to the portal, local write primary
   let bitrix: BitrixClient;
   if (cfg.leadSink === 'platform') {
-    bitrix = new PlatformLeadStore({
-      db, initialStatusId: cfg.bitrixInitialStatusId, campaignExhibition: cfg.campaignExhibition,
-    });
+    bitrix = new PlatformLeadStore({ db, initialStatusId: cfg.bitrixInitialStatusId });
   } else if (cfg.leadSink === 'both') {
     bitrix = new DualLeadSink({
       db,
-      platform: new PlatformLeadStore({
-        db, initialStatusId: cfg.bitrixInitialStatusId, campaignExhibition: cfg.campaignExhibition,
-      }),
+      platform: new PlatformLeadStore({ db, initialStatusId: cfg.bitrixInitialStatusId }),
       bitrix: portal(),
       onWarn: (e) => console.warn(JSON.stringify({ level: 'warn', src: 'sink', ...e })),
     });

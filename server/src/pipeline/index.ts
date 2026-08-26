@@ -49,7 +49,6 @@ export interface PipelineDeps {
 const LIST_FIELDS = [
   'UF_CRM_LEAD_TYPE',
   'UF_CRM_REGION',
-  'UF_CRM_EXHIBITION',
   'UF_CRM_PRODUCT_INTEREST',
   'UF_CRM_PRIORITY',
 ];
@@ -89,10 +88,7 @@ export class Pipeline {
 
       const byId = new Map(resolved.map((i) => [i.messageId, i]));
       const listValues = await this.loadListValues();
-      const campaign: Campaign = {
-        exhibition: this.deps.config.campaignExhibition,
-        source: this.deps.config.campaignSource,
-      };
+      const campaign: Campaign = { source: this.deps.config.campaignSource };
 
       // ── Per-segment extraction -> gating -> mapping -> LeadWrite ──
       const writes: LeadWrite[] = [];

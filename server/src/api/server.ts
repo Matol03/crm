@@ -621,7 +621,9 @@ export function createApiServer(app: ApiApp, config: ApiServerConfig): Server {
       sendJson(res, 200, {
         ...ref,
         campaign: {
-          exhibition: config.campaignExhibition ?? null,
+          // The project name shown in the top bar. It is no longer stamped on
+          // leads — exhibition was removed as a lead field.
+          name: config.campaignExhibition ?? null,
           source: config.campaignSource ?? null,
         },
       });
@@ -743,7 +745,7 @@ export function startApi(): void {
         deepseek: cfg.deepseekApiKey.length > 0,
       },
       channel: { teamsGroupId: cfg.graph.teamsGroupId, channelId: cfg.graph.channelId },
-      campaign: { exhibition: cfg.campaignExhibition, source: cfg.campaignSource },
+      campaign: { name: cfg.campaignExhibition, source: cfg.campaignSource },
       tuning: {
         idleTimeoutMs: cfg.idleTimeoutMs, maxSessionDurationMs: cfg.maxSessionDurationMs,
         pollIntervalMs: cfg.pollIntervalMs, confidenceThreshold: cfg.confidenceThreshold,

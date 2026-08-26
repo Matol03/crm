@@ -31,12 +31,6 @@ export const SEED_USERFIELD_VALUES: Record<string, Array<{ label: string; id: nu
     { label: 'LATAM', id: 59 },
     { label: 'Africa', id: 61 },
   ],
-  UF_CRM_EXHIBITION: [
-    { label: 'Hannover Messe 2026', id: 63 },
-    { label: 'GITEX Global 2026', id: 65 },
-    { label: 'Innoprom 2026', id: 67 },
-    { label: 'ADIPEC 2026', id: 69 },
-  ],
   UF_CRM_PRODUCT_INTEREST: [
     { label: 'Platform / Core', id: 71 },
     { label: 'Analytics', id: 73 },
@@ -172,7 +166,6 @@ export class MockBitrixClient implements BitrixClient {
       COMMENTS: lead.verbatim,
       UF_CRM_LEAD_TYPE: lead.listFields.leadTypeId,
       UF_CRM_REGION: lead.listFields.regionId ?? null,
-      UF_CRM_EXHIBITION: lead.listFields.exhibitionId ?? null,
       UF_CRM_PRODUCT_INTEREST: lead.listFields.productInterestId ?? null,
       UF_CRM_PRIORITY: lead.listFields.priorityId ?? null,
       UF_CRM_TEAMS_GROUP_ID: lead.service.teamsGroupId,

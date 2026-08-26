@@ -282,7 +282,6 @@ export class RealBitrixClient implements BitrixClient {
     if (lead.phones.length) f.PHONE = lead.phones.map((p) => ({ VALUE: p.value, VALUE_TYPE: p.type }));
     if (lead.emails.length) f.EMAIL = lead.emails.map((e) => ({ VALUE: e.value, VALUE_TYPE: e.type }));
     if (lead.listFields.regionId != null) f.UF_CRM_REGION = lead.listFields.regionId;
-    if (lead.listFields.exhibitionId != null) f.UF_CRM_EXHIBITION = lead.listFields.exhibitionId;
     if (lead.listFields.productInterestId != null) f.UF_CRM_PRODUCT_INTEREST = lead.listFields.productInterestId;
     if (lead.listFields.priorityId != null) f.UF_CRM_PRIORITY = lead.listFields.priorityId;
     return f;

@@ -57,7 +57,7 @@ export async function renderChannels(root) {
         h('div',
           h('div.fw-medium', 'How the mapping works'),
           h('div.t-xs', { style: { marginTop: '2px' } },
-            'Messages posted in this channel become leads stamped with the campaign’s exhibition and source. '
+            'Messages posted in this channel become leads stamped with the campaign’s source. '
             + 'The manager who posted owns the lead. Changing the channel is a service configuration change.')))),
   );
 }

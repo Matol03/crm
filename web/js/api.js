@@ -191,7 +191,6 @@ function shapeLead(l) {
     company: l.company,
     country: l.region,
     region: l.region,
-    exhibition: l.exhibition,
     owner: l.owner ? { name: l.owner, id: l.ownerId } : null,
     leadType: l.leadType,
     productInterest: l.productInterest,

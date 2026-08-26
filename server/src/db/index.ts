@@ -86,6 +86,7 @@ export class Db {
     this.ensureColumn('platform_leads', 'bitrix_lead_id', 'INTEGER');
     this.ensureColumn('platform_leads', 'bitrix_synced_at', 'TEXT');
     this.ensureColumn('platform_leads', 'bitrix_error', 'TEXT');
+    this.dropColumn('platform_leads', 'exhibition');
     this.backfillLeadSources();
   }
 
@@ -103,6 +104,27 @@ export class Db {
       `INSERT OR IGNORE INTO platform_lead_sources (platform_lead_id, local_id)
        SELECT id, local_id FROM platform_leads WHERE local_id IS NOT NULL`,
     );
+  }
+
+  /**
+   * Remove a column that is no longer part of the model, when it is still
+   * present. Guarded the same way as ensureColumn: DROP COLUMN throws if the
+   * column is already gone, which would break every later startup. Failure is
+   * tolerated — an unused column is harmless, and refusing to start over one
+   * would be worse than leaving it.
+   */
+  private dropColumn(table: string, column: string): void {
+    const exists = this.handle
+      .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name = ?`)
+      .get(table);
+    if (!exists) return;
+    const cols = this.handle.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+    if (!cols.some((c) => c.name === column)) return;
+    try {
+      this.handle.exec(`ALTER TABLE ${table} DROP COLUMN ${column}`);
+    } catch {
+      /* Older SQLite without DROP COLUMN: leave it in place, unused. */
+    }
   }
 
   /** Add a column only when the table exists and lacks it. */

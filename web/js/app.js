@@ -111,7 +111,7 @@ checkConnection().then(async () => {
   renderConnection();
   try {
     const ref = await getReference();
-    if (setCampaign(ref?.campaign?.exhibition)) {
+    if (setCampaign(ref?.campaign?.name)) {
       renderCampaign();
       resolve();   // repaint the current page, whose title may show it
     }

@@ -166,7 +166,10 @@ export function loadConfig(raw?: Record<string, string | undefined>): AppConfig 
     bitrixRateLimitPerSec: num(env.BITRIX_RATE_LIMIT_PER_SEC, 2),
     bitrixBatchSize: num(env.BITRIX_BATCH_SIZE, 13),
 
-    campaignExhibition: env.CAMPAIGN_EXHIBITION ?? '',
+    // The project name in the console's top bar. Named CAMPAIGN_NAME now that
+    // exhibition is no longer a lead field; the old key still works so an
+    // existing deployment keeps its title after upgrading.
+    campaignExhibition: env.CAMPAIGN_NAME ?? env.CAMPAIGN_EXHIBITION ?? '',
     campaignSource: env.CAMPAIGN_SOURCE ?? '',
 
     dbPath: env.DB_PATH ?? './data/lead-service.sqlite',

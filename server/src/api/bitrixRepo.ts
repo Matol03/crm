@@ -37,7 +37,6 @@ interface Cached<T> { value: T; at: number; }
 const LIST_FIELDS = [
   'UF_CRM_LEAD_TYPE',
   'UF_CRM_REGION',
-  'UF_CRM_EXHIBITION',
   'UF_CRM_PRODUCT_INTEREST',
   'UF_CRM_PRIORITY',
 ] as const;
@@ -283,7 +282,6 @@ export class BitrixRepo {
       statusSemantic: str(r.STATUS_SEMANTIC_ID),
       leadType: label('UF_CRM_LEAD_TYPE'),
       region: label('UF_CRM_REGION'),
-      exhibition: label('UF_CRM_EXHIBITION'),
       productInterest: label('UF_CRM_PRODUCT_INTEREST'),
       priority: label('UF_CRM_PRIORITY'),
       phones: multi(r.PHONE),
@@ -322,7 +320,6 @@ export interface ConsoleLead {
   statusSemantic: string | null;
   leadType: string | null;
   region: string | null;
-  exhibition: string | null;
   productInterest: string | null;
   priority: string | null;
   phones: string[];

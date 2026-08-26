@@ -31,23 +31,15 @@ export interface PlatformStoreOptions {
   db: Db;
   /** Status assigned to a newly created lead (never re-applied on update). */
   initialStatusId?: string;
-  /**
-   * Campaign name, used when the exhibition does not match a Bitrix list
-   * option. The portal must blank an unmatched value; the platform has no fixed
-   * option list, so it can record the campaign the lead actually came from.
-   */
-  campaignExhibition?: string;
 }
 
 export class PlatformLeadStore implements BitrixClient {
   private readonly db: Db;
   private readonly initialStatusId: string;
-  private readonly campaignExhibition: string | null;
 
   constructor(opts: PlatformStoreOptions) {
     this.db = opts.db;
     this.initialStatusId = opts.initialStatusId ?? 'NEW';
-    this.campaignExhibition = opts.campaignExhibition ?? null;
   }
 
   /**
@@ -172,14 +164,14 @@ export class PlatformLeadStore implements BitrixClient {
       .prepare(
         `UPDATE platform_leads SET
            name = ?, company = ?, position = ?, country = ?,
-           lead_type = ?, region = ?, exhibition = ?, product_interest = ?, priority = ?,
+           lead_type = ?, region = ?, product_interest = ?, priority = ?,
            phones_json = ?, emails_json = ?,
            updated_at = datetime('now')
          WHERE id = ?`,
       )
       .run(
         fill('name'), fill('company'), fill('position'), fill('country'),
-        fill('lead_type'), fill('region'), fill('exhibition'),
+        fill('lead_type'), fill('region'),
         fill('product_interest'), fill('priority'),
         JSON.stringify(phones), JSON.stringify(emails),
         survivorId,
@@ -243,15 +235,14 @@ export class PlatformLeadStore implements BitrixClient {
       .prepare(
         `INSERT INTO platform_leads
            (local_id, session_id, title, name, company, position, country, owner_id,
-            status_id, lead_type, region, exhibition, product_interest, priority,
+            status_id, lead_type, region, product_interest, priority,
             phones_json, emails_json, verbatim, ai_summary, teams_author)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
       .run(
         lead.localId, lead.sessionId, lead.title, lead.name, lead.company, lead.position,
         lead.country, lead.assignedById, this.initialStatusId,
         this.label(f, 'leadTypeId'), this.label(f, 'regionId'),
-        this.label(f, 'exhibitionId') ?? this.campaignExhibition,
         this.label(f, 'productInterestId'), this.label(f, 'priorityId'),
         JSON.stringify(phones), JSON.stringify(emails),
         lead.verbatim, lead.aiSummaryRu, lead.service.teamsAuthor,
@@ -279,7 +270,6 @@ export class PlatformLeadStore implements BitrixClient {
            company = COALESCE(?, company), position = COALESCE(?, position),
            country = COALESCE(?, country), owner_id = COALESCE(?, owner_id),
            lead_type = COALESCE(?, lead_type), region = COALESCE(?, region),
-           exhibition = COALESCE(?, exhibition),
            product_interest = COALESCE(?, product_interest),
            priority = COALESCE(?, priority),
            phones_json = ?, emails_json = ?,
@@ -289,7 +279,7 @@ export class PlatformLeadStore implements BitrixClient {
       )
       .run(
         lead.title, lead.name, lead.company, lead.position, lead.country, lead.assignedById,
-        this.label(f, 'leadTypeId'), this.label(f, 'regionId'), this.label(f, 'exhibitionId'),
+        this.label(f, 'leadTypeId'), this.label(f, 'regionId'),
         this.label(f, 'productInterestId'), this.label(f, 'priorityId'),
         JSON.stringify(mergedPhones), JSON.stringify(mergedEmails),
         lead.verbatim, lead.aiSummaryRu, id,
@@ -317,7 +307,6 @@ export class PlatformLeadStore implements BitrixClient {
 const LIST_KEY_TO_FIELD: Record<string, string> = {
   leadTypeId: 'UF_CRM_LEAD_TYPE',
   regionId: 'UF_CRM_REGION',
-  exhibitionId: 'UF_CRM_EXHIBITION',
   productInterestId: 'UF_CRM_PRODUCT_INTEREST',
   priorityId: 'UF_CRM_PRIORITY',
 };

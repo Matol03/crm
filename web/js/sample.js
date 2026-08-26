@@ -29,7 +29,6 @@ function lead(id, name, company, over = {}) {
     statusSemantic: 'P',
     leadType: 'Customer',
     region: 'Europe',
-    exhibition: 'Sample Exhibition 2026',
     productInterest: 'Analytics',
     priority: 'Medium',
     phones: [`+49 30 0000 ${id}`],
@@ -88,7 +87,7 @@ export const REFERENCE = {
   },
   users: { 1: OWNER },
   statuses: { NEW: 'Unprocessed', IN_PROCESS: 'In progress' },
-  campaign: { exhibition: 'Sample Exhibition 2026', source: 'Exhibition' },
+  campaign: { name: 'Sample Project', source: 'Trade Show' },
 };
 
 export const SYSTEM = {

@@ -85,7 +85,6 @@ CREATE TABLE IF NOT EXISTS platform_leads (
   status_id        TEXT NOT NULL DEFAULT 'NEW',
   lead_type        TEXT,
   region           TEXT,
-  exhibition       TEXT,
   product_interest TEXT,
   priority         TEXT,
   phones_json      TEXT NOT NULL DEFAULT '[]',

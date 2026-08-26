@@ -14,7 +14,6 @@ import { getReference, getSystem } from '../../api.js';
 const FIELD_TITLES = {
   UF_CRM_LEAD_TYPE: 'Lead type',
   UF_CRM_REGION: 'Region',
-  UF_CRM_EXHIBITION: 'Exhibition',
   UF_CRM_PRODUCT_INTEREST: 'Product interest',
   UF_CRM_PRIORITY: 'Priority',
 };
@@ -47,7 +46,7 @@ export async function renderCampaign(root) {
       panel({
         title: 'Identity',
         body: h('dl.dl',
-          h('dt', 'Exhibition'), h('dd.fw-medium', campaign.exhibition || '—'),
+          h('dt', 'Project'), h('dd.fw-medium', campaign.name || '—'),
           h('dt', 'Source'), h('dd', campaign.source || '—')),
       }),
       panel({
