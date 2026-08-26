@@ -19,6 +19,8 @@ import type { SessionBundle } from '../contracts/index.js';
 import { loadConfig } from '../config/index.js';
 import { BitrixRepo } from './bitrixRepo.js';
 import { PlatformRepo } from './platformRepo.js';
+import { AuthStore, type Account, type Role } from '../auth/store.js';
+import { passwordProblem } from '../auth/passwords.js';
 import { createHttpTransport } from '../bitrix/transport.js';
 import { buildApp } from '../app.js';
 
@@ -39,7 +41,11 @@ export interface ApiApp {
   db: Db;
   pipeline: Pipeline;
   /** Lead sink, when the server is allowed to write status changes. */
-  bitrix?: { setLeadStatus?(id: number, statusId: string): Promise<void> };
+  bitrix?: {
+    setLeadStatus?(id: number, statusId: string): Promise<void>;
+    deleteLead?(id: number): Promise<void>;
+    mergeLeads?(survivorId: number, duplicateId: number): Promise<void>;
+  };
 }
 
 /** Only the secret is required to gate the API. */
@@ -167,6 +173,44 @@ function readServiceLog(limit = 200): Array<Record<string, unknown>> {
   return out.slice(-limit).reverse();   // newest first
 }
 
+const SESSION_COOKIE = 'leadsession';
+
+/** Parse one cookie value. No dependency, and no need for a full parser. */
+function cookie(req: IncomingMessage, name: string): string | null {
+  const raw = req.headers.cookie;
+  if (!raw) return null;
+  for (const part of raw.split(';')) {
+    const eq = part.indexOf('=');
+    if (eq === -1) continue;
+    if (part.slice(0, eq).trim() === name) return decodeURIComponent(part.slice(eq + 1).trim());
+  }
+  return null;
+}
+
+/**
+ * Session cookie attributes.
+ *   HttpOnly — page scripts cannot read the token, so an XSS bug cannot steal it
+ *   SameSite=Strict — the cookie is not sent on cross-site requests (CSRF)
+ *   Path=/ — one session for the whole console
+ * `Secure` is added when the request arrived over TLS; forcing it on plain HTTP
+ * would silently break the local pilot, which is served over http://localhost.
+ */
+function sessionCookie(token: string, secure: boolean, maxAgeSec: number): string {
+  return [
+    `${SESSION_COOKIE}=${encodeURIComponent(token)}`,
+    'HttpOnly',
+    'SameSite=Strict',
+    'Path=/',
+    `Max-Age=${maxAgeSec}`,
+    secure ? 'Secure' : '',
+  ].filter(Boolean).join('; ');
+}
+
+function isSecureRequest(req: IncomingMessage): boolean {
+  if ((req.socket as { encrypted?: boolean }).encrypted) return true;
+  return String(req.headers['x-forwarded-proto'] ?? '').split(',')[0]!.trim() === 'https';
+}
+
 /**
  * Read a small JSON request body. Capped: an unbounded read would let one
  * request exhaust memory, and nothing this API accepts is large.
@@ -228,6 +272,8 @@ function sourceMessagesFor(db: Db, sessionId: string): SessionBundle['items'] {
 
 export function createApiServer(app: ApiApp, config: ApiServerConfig): Server {
   const { db, pipeline } = app;
+  const auth = new AuthStore(db);
+  auth.purgeExpired();
 
   // Read model behind the console. With the platform sink the leads live in
   // this service's own store, so the screens work with no portal attached;
@@ -283,14 +329,121 @@ export function createApiServer(app: ApiApp, config: ApiServerConfig): Server {
       return;
     }
 
-    // ── Everything under /api requires the shared secret ────
-    if (path.startsWith('/api/')) {
-      if (presentedSecret(req, url) !== config.apiSharedSecret) {
-        sendJson(res, 401, { error: 'unauthorized' });
+    if (!path.startsWith('/api/')) {
+      sendJson(res, 404, { error: 'not found' });
+      return;
+    }
+
+    // ── Authentication ──────────────────────────────────────
+    // Two ways in, both resolved server-side:
+    //   1. a login session cookie -> a real account with a real role
+    //   2. the shared secret -> machine access (scripts, health checks),
+    //      treated as an administrator because it is a deployment credential
+    // The browser cannot choose its own role: it is read from the account.
+    const sessionToken = cookie(req, SESSION_COOKIE);
+    const account = auth.resolve(sessionToken);
+    const machine = presentedSecret(req, url) === config.apiSharedSecret;
+    const role: Role | null = account ? account.role : machine ? 'admin' : null;
+
+    // Login and the session probe are the only routes reachable unauthenticated.
+    if (path === '/api/auth/login' && method === 'POST') {
+      const body = await readJson(req).catch(() => null);
+      const username = typeof body?.['username'] === 'string' ? body['username'] : '';
+      const password = typeof body?.['password'] === 'string' ? body['password'] : '';
+      const result = username && password ? auth.login(username, password) : null;
+      if (!result) {
+        // One message for every failure mode, so usernames cannot be probed.
+        sendJson(res, 401, { error: 'invalid_credentials', message: 'Wrong username or password.' });
         return;
       }
-    } else {
-      sendJson(res, 404, { error: 'not found' });
+      res.setHeader('set-cookie', sessionCookie(result.token, isSecureRequest(req), 12 * 3600));
+      sendJson(res, 200, { user: result.account });
+      return;
+    }
+
+    if (path === '/api/auth/logout' && method === 'POST') {
+      if (sessionToken) auth.revoke(sessionToken);
+      res.setHeader('set-cookie', sessionCookie('', isSecureRequest(req), 0));
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    if (path === '/api/auth/me' && method === 'GET') {
+      if (!role) { sendJson(res, 401, { error: 'unauthorized' }); return; }
+      sendJson(res, 200, {
+        user: account ?? { id: 0, username: 'service', displayName: 'Service access', role: 'admin', disabled: false },
+      });
+      return;
+    }
+
+    if (!role) {
+      sendJson(res, 401, { error: 'unauthorized', message: 'Sign in to use this console.' });
+      return;
+    }
+
+    /** Guard for routes only an administrator may use. */
+    const requireAdmin = (): boolean => {
+      if (role === 'admin') return true;
+      sendJson(res, 403, {
+        error: 'forbidden',
+        message: 'This action needs an administrator account.',
+      });
+      return false;
+    };
+
+    // ── Account administration ──────────────────────────────
+    if (path === '/api/auth/users' && method === 'GET') {
+      if (!requireAdmin()) return;
+      sendJson(res, 200, auth.list());
+      return;
+    }
+
+    if (path === '/api/auth/users' && method === 'POST') {
+      if (!requireAdmin()) return;
+      const body = await readJson(req).catch(() => null);
+      const username = String(body?.['username'] ?? '').trim();
+      const password = String(body?.['password'] ?? '');
+      const wanted = body?.['role'] === 'admin' ? 'admin' : 'user';
+      if (!username) { sendJson(res, 400, { error: 'bad_request', message: 'Username is required.' }); return; }
+      const problem = passwordProblem(password);
+      if (problem) { sendJson(res, 400, { error: 'weak_password', message: problem }); return; }
+      if (auth.findByUsername(username)) {
+        sendJson(res, 409, { error: 'exists', message: 'That username is already taken.' });
+        return;
+      }
+      sendJson(res, 201, auth.create({
+        username, password, role: wanted as Role,
+        displayName: String(body?.['displayName'] ?? username),
+      }));
+      return;
+    }
+
+    const userRoute = /^\/api\/auth\/users\/(\d+)$/.exec(path);
+    if (userRoute && (method === 'PATCH' || method === 'POST')) {
+      if (!requireAdmin()) return;
+      const id = Number(userRoute[1]);
+      const body = await readJson(req).catch(() => null);
+      if (typeof body?.['password'] === 'string') {
+        const problem = passwordProblem(body['password'] as string);
+        if (problem) { sendJson(res, 400, { error: 'weak_password', message: problem }); return; }
+        auth.setPassword(id, body['password'] as string);
+      }
+      if (body?.['role'] === 'admin' || body?.['role'] === 'user') {
+        // An administrator must not remove their own last route back in.
+        if (account && account.id === id && body['role'] === 'user') {
+          sendJson(res, 400, { error: 'bad_request', message: 'You cannot remove your own administrator role.' });
+          return;
+        }
+        auth.setRole(id, body['role'] as Role);
+      }
+      if (typeof body?.['disabled'] === 'boolean') {
+        if (account && account.id === id && body['disabled']) {
+          sendJson(res, 400, { error: 'bad_request', message: 'You cannot disable your own account.' });
+          return;
+        }
+        auth.setDisabled(id, body['disabled'] as boolean);
+      }
+      sendJson(res, 200, { ok: true });
       return;
     }
 
@@ -355,9 +508,89 @@ export function createApiServer(app: ApiApp, config: ApiServerConfig): Server {
       return;
     }
 
+    // ── Deleting a lead ─────────────────────────────────────
+    // Administrator only, and destructive: it also removes the copy this
+    // service created in Bitrix24, so no orphan is left for the sales team.
+    const deleteRoute = /^\/api\/crm\/leads\/(\d+)$/.exec(path);
+    if (deleteRoute && method === 'DELETE') {
+      if (!requireAdmin()) return;
+      if (!app.bitrix?.deleteLead) {
+        sendJson(res, 503, { error: 'not_supported', message: 'This lead store cannot delete leads.' });
+        return;
+      }
+      try {
+        await app.bitrix.deleteLead(Number(deleteRoute[1]));
+        sendJson(res, 200, { ok: true, id: Number(deleteRoute[1]) });
+      } catch (e) {
+        // The local delete may have succeeded while the portal failed; say so
+        // rather than reporting a clean success or a total failure.
+        sendJson(res, 502, {
+          error: 'delete_partial',
+          message: e instanceof Error ? e.message : 'The lead could not be deleted.',
+        });
+      }
+      return;
+    }
+
+    // ── Duplicate decisions ─────────────────────────────────
+    const dupRoute = /^\/api\/crm\/duplicates\/(\d+)-(\d+)\/(merge|dismiss)$/.exec(path);
+    if (dupRoute && method === 'POST') {
+      const left = Number(dupRoute[1]);
+      const right = Number(dupRoute[2]);
+      const action = dupRoute[3];
+      const key = `${Math.min(left, right)}-${Math.max(left, right)}`;
+      const who = account?.username ?? 'service';
+
+      if (action === 'dismiss') {
+        // Not a duplicate: remember the decision so the pair stops resurfacing.
+        db.handle
+          .prepare(`INSERT INTO duplicate_decisions (pair_key, decision, decided_by)
+                    VALUES (?, 'not_duplicate', ?)
+                    ON CONFLICT(pair_key) DO UPDATE SET
+                      decision = 'not_duplicate', merged_into = NULL,
+                      decided_by = excluded.decided_by, decided_at = datetime('now')`)
+          .run(key, who);
+        sendJson(res, 200, { ok: true, decision: 'not_duplicate' });
+        return;
+      }
+
+      // Merging destroys one record, so it is an administrator action.
+      if (!requireAdmin()) return;
+      if (!app.bitrix?.mergeLeads) {
+        sendJson(res, 503, { error: 'not_supported', message: 'This lead store cannot merge leads.' });
+        return;
+      }
+      const body = await readJson(req).catch(() => null);
+      // The survivor defaults to the lower id (the earlier lead), unless asked.
+      const survivor = Number(body?.['survivorId'] ?? Math.min(left, right));
+      const duplicate = survivor === left ? right : left;
+      if (survivor !== left && survivor !== right) {
+        sendJson(res, 400, { error: 'bad_request', message: 'survivorId must be one of the pair.' });
+        return;
+      }
+      try {
+        await app.bitrix.mergeLeads(survivor, duplicate);
+        db.handle
+          .prepare(`INSERT INTO duplicate_decisions (pair_key, decision, merged_into, decided_by)
+                    VALUES (?, 'merged', ?, ?)
+                    ON CONFLICT(pair_key) DO UPDATE SET
+                      decision = 'merged', merged_into = excluded.merged_into,
+                      decided_by = excluded.decided_by, decided_at = datetime('now')`)
+          .run(key, survivor, who);
+        sendJson(res, 200, { ok: true, decision: 'merged', survivorId: survivor });
+      } catch (e) {
+        sendJson(res, 502, {
+          error: 'merge_failed',
+          message: e instanceof Error ? e.message : 'The leads could not be merged.',
+        });
+      }
+      return;
+    }
+
     // Recent service activity, parsed from the poller's log file.
     // Admin-facing: it names leads, which the operator can already see.
     if (method === 'GET' && path === '/api/logs') {
+      if (!requireAdmin()) return;
       sendJson(res, 200, { entries: readServiceLog(Number(url.searchParams.get('limit') ?? 200)) });
       return;
     }
@@ -365,6 +598,7 @@ export function createApiServer(app: ApiApp, config: ApiServerConfig): Server {
     // Operational state for the admin screens. Secrets are never included —
     // only whether a credential is configured.
     if (method === 'GET' && path === '/api/system') {
+      if (!requireAdmin()) return;
       const leads = db.listLeads();
       sendJson(res, 200, {
         ...(config.system ?? {}),

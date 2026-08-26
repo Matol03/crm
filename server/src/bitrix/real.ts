@@ -68,6 +68,11 @@ export class RealBitrixClient implements BitrixClient {
     return `${this.origin}/crm/lead/details/${id}/`;
   }
 
+  /** Permanently delete a lead from the portal. */
+  async deleteLead(id: number): Promise<void> {
+    await this.call('crm.lead.delete', { id });
+  }
+
   /** Move an existing lead to another STATUS_ID. */
   async setLeadStatus(id: number, statusId: string): Promise<void> {
     await this.call('crm.lead.update', { id, fields: { STATUS_ID: statusId } });

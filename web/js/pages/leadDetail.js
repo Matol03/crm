@@ -14,7 +14,7 @@ import {
   panel, statusBadge, badge, confidence, lowConfidenceFlag,
   skeleton, errorState, apiErrorState, banner, toast,
 } from '../ui/primitives.js';
-import { getLead, resendLead, setLeadStatus, LEAD_STATUSES, FIELD_LABELS } from '../api.js';
+import { getLead, resendLead, setLeadStatus, deleteLead, LEAD_STATUSES, FIELD_LABELS } from '../api.js';
 import { navigate } from '../router.js';
 import { isAdmin } from '../state.js';
 
@@ -361,6 +361,47 @@ export async function renderLeadDetail(root, id) {
     });
   }
 
+  /**
+   * Removing a lead. Administrator only, confirmed, and explicit that the copy
+   * in Bitrix24 goes too — a lead deleted here but left in the CRM would still
+   * be worked by the sales team.
+   */
+  function deleteControl() {
+    if (!isAdmin()) return null;
+    const btn = h('button.btn.btn-sm', {
+      style: { color: 'var(--danger, #D14338)' },
+      onclick: async () => {
+        const who = lead.person?.name || `lead #${lead.bitrixLeadId}`;
+        if (!confirm(
+          `Delete “${who}”?
+
+` +
+          `It will be removed from this platform and its copy deleted from Bitrix24.
+
+` +
+          `This cannot be undone.`
+        )) return;
+        btn.disabled = true;
+        btn.textContent = 'Deleting…';
+        try {
+          await deleteLead(lead.bitrixLeadId);
+          toast(`Deleted “${who}”`, 'ok');
+          navigate('leads');
+        } catch (err) {
+          btn.disabled = false;
+          btn.textContent = 'Delete lead';
+          toast(err?.message || 'The lead could not be deleted.', 'warn');
+        }
+      },
+    }, 'Delete lead');
+
+    return panel({
+      title: 'Remove this lead',
+      subtitle: 'Deletes it here and in Bitrix24. Rejecting it instead keeps the record here.',
+      body: h('div', { style: { padding: 'var(--sp-3)' } }, btn),
+    });
+  }
+
   /* ── Compose ─────────────────────────────────────────────────────────── */
 
   renderFields();
@@ -409,6 +450,8 @@ export async function renderLeadDetail(root, id) {
     h('div', { style: { marginBottom: 'var(--sp-4)' } }, crmSection(), mirrorWarning()),
 
     lead.bitrixLeadId && h('div', { style: { marginBottom: 'var(--sp-4)' } }, statusControl()),
+
+    lead.bitrixLeadId && deleteControl() && h('div', { style: { marginBottom: 'var(--sp-4)' } }, deleteControl()),
 
     // ── Extracted data + evidence, side by side ───────────────────────
     h('div.grid', { style: { gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', alignItems: 'start' } },

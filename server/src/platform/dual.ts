@@ -30,6 +30,8 @@ export interface DualSinkOptions {
   bitrix: BitrixClient;
   /** Structured, PII-free notice when the mirror fails (S13). */
   onWarn?: (e: { event: string; localId: string; detail: string }) => void;
+  /** Remove the portal copy when a lead is rejected here. Default true. */
+  deleteOnReject?: boolean;
 }
 
 export class DualLeadSink implements BitrixClient {
@@ -37,12 +39,14 @@ export class DualLeadSink implements BitrixClient {
   private readonly platform: PlatformLeadStore;
   private readonly bitrix: BitrixClient;
   private readonly onWarn: (e: { event: string; localId: string; detail: string }) => void;
+  private readonly deleteOnReject: boolean;
 
   constructor(opts: DualSinkOptions) {
     this.db = opts.db;
     this.platform = opts.platform;
     this.bitrix = opts.bitrix;
     this.onWarn = opts.onWarn ?? (() => {});
+    this.deleteOnReject = opts.deleteOnReject ?? true;
   }
 
   /**
@@ -121,6 +125,23 @@ export class DualLeadSink implements BitrixClient {
       .get(id) as { local_id: string; bitrix_lead_id: number | null } | undefined;
     if (!row?.bitrix_lead_id || !this.bitrix.setLeadStatus) return;
 
+    // Rejecting a lead here removes it from the portal rather than leaving a
+    // rejected copy for the sales team to work. Configurable via deleteOnReject.
+    if (statusId === 'JUNK' && this.deleteOnReject && this.bitrix.deleteLead) {
+      try {
+        await this.bitrix.deleteLead(row.bitrix_lead_id);
+        this.db.handle
+          .prepare(`UPDATE platform_leads SET bitrix_lead_id = NULL, bitrix_error = NULL,
+                     bitrix_synced_at = datetime('now') WHERE local_id = ?`)
+          .run(row.local_id);
+      } catch (e) {
+        const detail = e instanceof Error ? e.message : String(e);
+        this.recordMirror(row.local_id, row.bitrix_lead_id, `not removed from Bitrix24: ${detail}`);
+        this.onWarn({ event: 'bitrix_delete_failed', localId: row.local_id, detail });
+      }
+      return;
+    }
+
     try {
       await this.bitrix.setLeadStatus(row.bitrix_lead_id, statusId);
       this.recordMirror(row.local_id, row.bitrix_lead_id, null);
@@ -128,6 +149,44 @@ export class DualLeadSink implements BitrixClient {
       const detail = e instanceof Error ? e.message : String(e);
       this.recordMirror(row.local_id, row.bitrix_lead_id, `status not synced: ${detail}`);
       this.onWarn({ event: 'bitrix_status_sync_failed', localId: row.local_id, detail });
+    }
+  }
+
+  /**
+   * Delete locally AND in the portal. The portal copy exists only because this
+   * service put it there, so removing the lead here without removing it there
+   * would leave an orphan the sales team still works.
+   *
+   * The portal call is best-effort in the same sense as writing: if it fails,
+   * the local deletion still stands and the failure is reported to the caller,
+   * because silently keeping a lead the operator asked to delete is worse.
+   */
+  async deleteLead(id: number): Promise<void> {
+    const bitrixId = this.platform.bitrixIdFor(id);
+    await this.platform.deleteLead(id);
+
+    if (bitrixId == null || !this.bitrix.deleteLead) return;
+    try {
+      await this.bitrix.deleteLead(bitrixId);
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
+      this.onWarn({ event: 'bitrix_delete_failed', localId: String(id), detail });
+      throw new Error(`Lead removed here, but not in Bitrix24: ${detail}`);
+    }
+  }
+
+  /** Fold one lead into another locally, then remove the duplicate's portal copy. */
+  async mergeLeads(survivorId: number, duplicateId: number): Promise<void> {
+    const duplicateBitrixId = this.platform.bitrixIdFor(duplicateId);
+    await this.platform.mergeLeads(survivorId, duplicateId);
+
+    if (duplicateBitrixId == null || !this.bitrix.deleteLead) return;
+    try {
+      await this.bitrix.deleteLead(duplicateBitrixId);
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
+      this.onWarn({ event: 'bitrix_delete_failed', localId: String(duplicateId), detail });
+      throw new Error(`Leads merged here, but the duplicate remains in Bitrix24: ${detail}`);
     }
   }
 

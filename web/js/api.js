@@ -49,15 +49,13 @@ export class ApiError extends Error {
 }
 
 async function call(path) {
+  // Identity comes from the login session cookie. The shared secret remains
+  // supported for machine access (scripts, checks), but a person signs in.
   const secret = getSecret();
-  if (!secret) {
-    connection.live = false;
-    connection.reason = 'No API secret';
-    throw new ApiError('This console needs the API secret before it can read anything.', { kind: 'auth' });
-  }
+  const headers = secret ? { 'x-api-secret': secret } : {};
   let res;
   try {
-    res = await fetch(path, { headers: { 'x-api-secret': secret } });
+    res = await fetch(path, { headers, credentials: 'same-origin' });
   } catch {
     connection.live = false;
     connection.reason = 'Service unreachable';
@@ -344,6 +342,78 @@ export const LEAD_STATUSES = [
   { id: 'CONVERTED', label: 'Completed' },
   { id: 'JUNK', label: 'Rejected' },
 ];
+
+/* ── Accounts and sessions ─────────────────────────────────────────────── */
+
+/** The signed-in account, or null when nobody is signed in. */
+export async function getCurrentUser() {
+  try {
+    const res = await fetch('/api/auth/me', { credentials: 'same-origin' });
+    if (!res.ok) return null;
+    return (await res.json()).user ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function login(username, password) {
+  const res = await fetch('/api/auth/login', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError(body.message || 'Sign-in failed.', { kind: 'auth' });
+  return body.user;
+}
+
+export async function logout() {
+  await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
+}
+
+export async function listUsers() { return call('/api/auth/users'); }
+
+export async function createUser(payload) {
+  return write('/api/auth/users', 'POST', payload);
+}
+
+export async function updateUser(id, payload) {
+  return write(`/api/auth/users/${id}`, 'PATCH', payload);
+}
+
+/* ── Lead actions ──────────────────────────────────────────────────────── */
+
+export async function deleteLead(id) { return write(`/api/crm/leads/${id}`, 'DELETE'); }
+
+export async function mergeDuplicate(pairId, survivorId) {
+  return write(`/api/crm/duplicates/${pairId}/merge`, 'POST', { survivorId });
+}
+
+export async function dismissDuplicate(pairId) {
+  return write(`/api/crm/duplicates/${pairId}/dismiss`, 'POST');
+}
+
+/** Shared writer: sends the session cookie and surfaces the service's message. */
+async function write(path, method, payload) {
+  const secret = getSecret();
+  const res = await fetch(path, {
+    method,
+    credentials: 'same-origin',
+    headers: {
+      'content-type': 'application/json',
+      ...(secret ? { 'x-api-secret': secret } : {}),
+    },
+    ...(payload ? { body: JSON.stringify(payload) } : {}),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(body.message || 'That action could not be completed.', {
+      kind: res.status === 403 ? 'forbidden' : res.status === 401 ? 'auth' : 'write',
+    });
+  }
+  return body;
+}
 
 export async function getLogs(limit = 200) {
   return callOrSample(`/api/logs?limit=${limit}`, sample.LOGS);

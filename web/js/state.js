@@ -6,13 +6,17 @@
  * Page-local concerns like filters and sorting stay inside their page module.
  */
 
-const KEY = 'leadservice.role';
-
 const listeners = new Set();
 
 export const state = {
-  /** 'admin' | 'user' — demo switcher; the API is the real authority. */
-  role: localStorage.getItem(KEY) === 'user' ? 'user' : 'admin',
+  /**
+   * The signed-in account, as reported by the service. The role is NOT a
+   * client-side choice: it is stored on the account and enforced on every
+   * request, so hiding a screen here is convenience, not security.
+   */
+  user: null,
+  /** 'admin' | 'user', mirrored from the account for convenience. */
+  role: 'user',
   /**
    * Campaign name shown in the top bar. Owned by the SERVICE (CAMPAIGN_
    * EXHIBITION), not by the UI — it is filled in on boot from the reference
@@ -29,11 +33,12 @@ export function setCampaign(name) {
 }
 
 export const isAdmin = () => state.role === 'admin';
+export const isSignedIn = () => state.user != null;
 
-export function setRole(role) {
-  if (state.role === role) return;
-  state.role = role;
-  localStorage.setItem(KEY, role);
+/** Adopt the account the service reports. Never called with client-made data. */
+export function setUser(user) {
+  state.user = user ?? null;
+  state.role = user?.role === 'admin' ? 'admin' : 'user';
   emit();
 }
 

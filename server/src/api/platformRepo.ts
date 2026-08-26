@@ -143,9 +143,19 @@ export class PlatformRepo {
     const all = await this.leads();
     const pairs: DuplicatePair[] = [];
 
+    // Pairs a human has already ruled on must not come back: re-presenting a
+    // dismissed pair every visit trains the reader to ignore the screen.
+    const decided = new Set(
+      (this.db.handle.prepare('SELECT pair_key FROM duplicate_decisions').all() as Array<{
+        pair_key: string;
+      }>).map((r) => r.pair_key),
+    );
+    const pairKey = (a: number, b: number) => `${Math.min(a, b)}-${Math.max(a, b)}`;
+
     for (let i = 0; i < all.length; i++) {
       for (let j = i + 1; j < all.length; j++) {
         const a = all[i]!, b = all[j]!;
+        if (decided.has(pairKey(a.bitrixLeadId, b.bitrixLeadId))) continue;
         const phone = overlap(a.phones.map(onlyDigits), b.phones.map(onlyDigits));
         const email = overlap(a.emails.map(lower), b.emails.map(lower));
         const nameMatch = compareNames(a.name, b.name);

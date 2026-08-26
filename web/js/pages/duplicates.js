@@ -8,9 +8,10 @@
  */
 
 import { h, icon, replace, fmtDateTime } from '../ui/dom.js';
-import { panel, confidence, badge, emptyState, apiErrorState, banner } from '../ui/primitives.js';
-import { getDuplicates } from '../api.js';
+import { panel, confidence, badge, emptyState, apiErrorState, banner, toast } from '../ui/primitives.js';
+import { getDuplicates, mergeDuplicate, dismissDuplicate } from '../api.js';
 import { navigate } from '../router.js';
+import { isAdmin } from '../state.js';
 
 const ROWS = [
   ['name', 'Name'], ['company', 'Company'], ['position', 'Position'],
@@ -90,12 +91,71 @@ export async function renderDuplicates(root) {
           pair.signals.map((s) => h(`div.signal.${s.match ? 'yes' : 'no'}`,
             h('span.mark', s.match ? '✓' : '✕'), s.label)))),
 
-      h('div.row', { style: { marginTop: 'var(--sp-5)', gap: 'var(--sp-3)' } },
-        h('a.btn', { href: pair.left.url, target: '_blank', rel: 'noopener' },
-          'Resolve in Bitrix24', icon('external', 13)),
-        h('span.t-xs.subtle', { style: { marginLeft: 'auto' } },
-          'Merging is done in the CRM, where its effect on both records is visible.'))),
+      actionRow(pair)),
   );
+
+  /**
+   * Decisions a reviewer can take on a pair. "Not a duplicate" is available to
+   * everyone, because it only records a judgement. Merging destroys one record
+   * and removes its copy from the CRM, so it is an administrator action and is
+   * confirmed first.
+   */
+  function actionRow(pair) {
+    const busy = (btn, label) => { btn.disabled = true; btn.textContent = label; };
+
+    const mergeInto = (survivor, other) => {
+      const btn = h('button.btn.btn-sm', {
+        onclick: async () => {
+          const keep = survivor.name || `lead #${survivor.bitrixLeadId}`;
+          const drop = other.name || `lead #${other.bitrixLeadId}`;
+          if (!confirm(
+            `Merge into “${keep}”?
+
+` +
+            `“${drop}” will be removed here and its copy deleted from Bitrix24. ` +
+            `Details “${keep}” is missing will be copied across first.
+
+This cannot be undone.`
+          )) return;
+          busy(btn, 'Merging…');
+          try {
+            await mergeDuplicate(pair.id, survivor.bitrixLeadId);
+            toast(`Merged into ${keep}`, 'ok');
+            renderDuplicates(root);
+          } catch (err) {
+            btn.disabled = false;
+            btn.textContent = `Keep ${keep}`;
+            toast(err?.message || 'The leads could not be merged.', 'warn');
+          }
+        },
+      }, `Keep ${survivor.name || '#' + survivor.bitrixLeadId}`);
+      return btn;
+    };
+
+    const dismiss = h('button.btn.btn-sm', {
+      onclick: async () => {
+        busy(dismiss, 'Saving…');
+        try {
+          await dismissDuplicate(pair.id);
+          toast('Marked as different people', 'ok');
+          renderDuplicates(root);
+        } catch (err) {
+          dismiss.disabled = false;
+          dismiss.textContent = 'Not a duplicate';
+          toast(err?.message || 'That could not be saved.', 'warn');
+        }
+      },
+    }, 'Not a duplicate');
+
+    return h('div.row.wrap', { style: { marginTop: 'var(--sp-5)', gap: 'var(--sp-3)' } },
+      dismiss,
+      isAdmin() ? mergeInto(pair.left, pair.right) : null,
+      isAdmin() ? mergeInto(pair.right, pair.left) : null,
+      h('span.t-xs.subtle', { style: { marginLeft: 'auto' } },
+        isAdmin()
+          ? 'Merging keeps one lead and copies across anything it was missing.'
+          : 'Merging leads needs an administrator account.'));
+  }
 
   replace(root, head, h('div.col', { style: { gap: 'var(--sp-6)' } }, pairs.map(comparison)));
 }

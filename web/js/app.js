@@ -9,10 +9,11 @@ import { h, replace } from './ui/dom.js';
 import { errorState } from './ui/primitives.js';
 import { mountShell, renderSidebar, renderConnection, renderCampaign } from './ui/shell.js';
 import { register, setNotFound, setOnNavigate, start, navigate, resolve } from './router.js';
-import { isAdmin, ADMIN_ROUTES, subscribe, setCampaign } from './state.js';
-import { checkConnection, getReference } from './api.js';
+import { isAdmin, ADMIN_ROUTES, subscribe, setCampaign, setUser } from './state.js';
+import { checkConnection, getReference, getCurrentUser } from './api.js';
 
-const main = mountShell(document.getElementById('root'));
+const root = document.getElementById('root');
+let main;
 
 /** Wrap a page renderer: guards admin routes and surfaces load failures. */
 function page(loader, { admin = false } = {}) {
@@ -20,7 +21,7 @@ function page(loader, { admin = false } = {}) {
     if (admin && !isAdmin()) {
       replace(main, errorState({
         title: 'Administrator access required',
-        note: 'This section contains integration settings and credentials. Switch to the Admin role to view it.',
+        note: 'This section contains integration settings and credentials, and your account does not have administrator access.',
         retry: () => navigate('dashboard'),
       }));
       return;
@@ -81,7 +82,25 @@ setOnNavigate(() => renderSidebar());
 // Re-render navigation when the role changes (Admin sections appear/disappear).
 subscribe(() => renderSidebar());
 
-start();
+/**
+ * Boot. The console is only assembled once the service has confirmed who is
+ * signed in — the role decides which sections exist, so building the shell
+ * first would flash administrator navigation at an ordinary user.
+ */
+async function boot() {
+  const user = await getCurrentUser();
+  if (!user) {
+    const { renderLogin } = await import('./pages/login.js');
+    renderLogin(root, () => location.reload());
+    return;
+  }
+  setUser(user);
+  main = mountShell(root);
+  start();
+  afterStart();
+}
+
+function afterStart() {
 
 // Probe the service so the header reflects whether live data is flowing, then
 // adopt the campaign name it reports — the UI must not assert a campaign of its
@@ -98,3 +117,6 @@ checkConnection().then(async () => {
     /* Offline or unauthenticated: the placeholder stays, nothing is invented. */
   }
 });
+}
+
+boot();

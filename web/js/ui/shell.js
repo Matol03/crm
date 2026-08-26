@@ -4,7 +4,7 @@
  */
 
 import { h, icon, replace } from './dom.js';
-import { state, isAdmin, setRole, ADMIN_ROUTES } from '../state.js';
+import { state, isAdmin, setUser, ADMIN_ROUTES } from '../state.js';
 import { current, navigate } from '../router.js';
 import { connection, dataSource, getSecret, setSecret } from '../api.js';
 import { openDrawer, toast } from './primitives.js';
@@ -225,24 +225,22 @@ export function mountShell(root) {
   sidebarEl = h('nav.sidebar', { 'aria-label': 'Main' });
   statusEl = h('button.btn.btn-ghost.btn-sm', { onclick: openConnectionDrawer, title: 'Data source' });
 
-  const roleSwitch = h('div.segmented', { role: 'group', 'aria-label': 'Role' },
-    ...['admin', 'user'].map((r) =>
-      h('button' + (state.role === r ? '.is-active' : ''), {
-        onclick: () => {
-          setRole(r);
-          // Leaving admin while on an admin page must not strand the user.
-          if (r === 'user' && ADMIN_ROUTES.has(current().name)) navigate('dashboard');
-          else { renderSidebar(); }
-          renderRoleSwitch();
-        },
-      }, r === 'admin' ? 'Admin' : 'User')),
+  // The role is shown, not chosen: it comes from the signed-in account and is
+  // enforced by the service on every request. A switcher here would suggest
+  // privileges can be picked, which is exactly the wrong idea to convey.
+  const roleSwitch = h('div.row', { style: { alignItems: 'center', gap: 'var(--sp-2)' } },
+    h('span.badge' + (isAdmin() ? '.badge-purple' : '.badge-neutral'),
+      isAdmin() ? 'Administrator' : 'User'),
+    h('button.btn.btn-ghost.btn-sm', {
+      title: 'Sign out',
+      onclick: async () => {
+        const { logout } = await import('../api.js');
+        await logout();
+        setUser(null);
+        location.reload();
+      },
+    }, 'Sign out'),
   );
-
-  function renderRoleSwitch() {
-    [...roleSwitch.children].forEach((btn, i) => {
-      btn.classList.toggle('is-active', state.role === ['admin', 'user'][i]);
-    });
-  }
 
   const main = h('main.main', h('div.main-inner'));
 

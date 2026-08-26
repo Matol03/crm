@@ -133,3 +133,96 @@ describe('dual sink — leads go to both stores', () => {
     db.close();
   });
 });
+
+describe('deleting and merging', () => {
+  it('deletes the lead here and removes its copy from the portal', async () => {
+    const db = freshDb();
+    const portal = new MockBitrixClient();
+    const s = sink(db, portal);
+    const [res] = await s.writeLeads([write()]);
+    const portalId = (db.handle
+      .prepare('SELECT bitrix_lead_id FROM platform_leads WHERE id = ?')
+      .get(res!.bitrixLeadId!) as { bitrix_lead_id: number }).bitrix_lead_id;
+    expect(await portal.getLead(portalId)).not.toBeNull();
+
+    await s.deleteLead(res!.bitrixLeadId!);
+
+    expect(await new PlatformRepo({ db }).leads()).toHaveLength(0);
+    // No orphan left behind for the sales team to work.
+    expect(await portal.getLead(portalId)).toBeNull();
+    db.close();
+  });
+
+  it('reports when the local delete succeeded but the portal did not', async () => {
+    const db = freshDb();
+    const portal = new MockBitrixClient();
+    const s = sink(db, portal);
+    const [res] = await s.writeLeads([write()]);
+    // Portal forgets the lead independently, so its delete will fail.
+    portal.deleteLead = async () => { throw new Error('403 forbidden'); };
+
+    await expect(s.deleteLead(res!.bitrixLeadId!)).rejects.toThrow(/not in Bitrix24/);
+    // The local deletion still stands — silently keeping it would be worse.
+    expect(await new PlatformRepo({ db }).leads()).toHaveLength(0);
+    db.close();
+  });
+
+  it('merges a duplicate into the survivor, filling only its gaps', async () => {
+    const db = freshDb();
+    const s = sink(db, new MockBitrixClient());
+    const [keep] = await s.writeLeads([write({ localId: 'a', company: null, emails: [] })]);
+    const [drop] = await s.writeLeads([write({
+      localId: 'b', name: 'Anna Petrova', company: 'Nordwind GmbH',
+      phones: [{ value: '+49 170 999', type: 'MOBILE' }],
+      emails: [{ value: 'anna@nordwind.example', type: 'WORK' }],
+      service: { teamsGroupId: 'g', teamsMessageIds: [], teamsAuthor: 'other@example.com' },
+    })]);
+
+    await s.mergeLeads(keep!.bitrixLeadId!, drop!.bitrixLeadId!);
+
+    const leads = await new PlatformRepo({ db }).leads();
+    expect(leads).toHaveLength(1);
+    const merged = leads[0]!;
+    expect(merged.bitrixLeadId).toBe(keep!.bitrixLeadId);
+    // The gap was filled from the duplicate...
+    expect(merged.company).toBe('Nordwind GmbH');
+    // ...and both sets of contact details survive.
+    expect(merged.phones).toContain('+49 30 1234567');
+    expect(merged.phones).toContain('+49 170 999');
+    expect(merged.emails).toContain('anna@nordwind.example');
+    db.close();
+  });
+
+  it('removes the portal copy when a lead is rejected', async () => {
+    const db = freshDb();
+    const portal = new MockBitrixClient();
+    const s = sink(db, portal);
+    const [res] = await s.writeLeads([write()]);
+    const portalId = (db.handle
+      .prepare('SELECT bitrix_lead_id FROM platform_leads WHERE id = ?')
+      .get(res!.bitrixLeadId!) as { bitrix_lead_id: number }).bitrix_lead_id;
+
+    await s.setLeadStatus(res!.bitrixLeadId!, 'JUNK');
+
+    expect(await portal.getLead(portalId)).toBeNull();
+    // The lead itself remains here, marked rejected, so the decision is visible.
+    const lead = await new PlatformRepo({ db }).lead(res!.bitrixLeadId!);
+    expect(lead!.statusId).toBe('JUNK');
+    expect(lead!.statusLabel).toBe('Rejected');
+    db.close();
+  });
+
+  it('keeps the portal copy for any other status change', async () => {
+    const db = freshDb();
+    const portal = new MockBitrixClient();
+    const s = sink(db, portal);
+    const [res] = await s.writeLeads([write()]);
+    const portalId = (db.handle
+      .prepare('SELECT bitrix_lead_id FROM platform_leads WHERE id = ?')
+      .get(res!.bitrixLeadId!) as { bitrix_lead_id: number }).bitrix_lead_id;
+
+    await s.setLeadStatus(res!.bitrixLeadId!, 'CONVERTED');
+    expect(await portal.getLead(portalId)).not.toBeNull();
+    db.close();
+  });
+});

@@ -87,4 +87,10 @@ export interface BitrixClient {
    * callers must treat its absence as "status changes are not available here".
    */
   setLeadStatus?(id: number, statusId: string): Promise<void>;
+  /**
+   * Remove a lead. Optional, and deliberately so: deletion is destructive and
+   * not every sink should offer it. Callers must treat its absence as
+   * "deletion is not available here" rather than assuming success.
+   */
+  deleteLead?(id: number): Promise<void>;
 }

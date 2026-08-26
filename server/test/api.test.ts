@@ -90,7 +90,8 @@ describe('api server', () => {
   it('GET /api/leads returns 401 without the secret', async () => {
     const { status, body } = await get('/api/leads');
     expect(status).toBe(401);
-    expect(body).toEqual({ error: 'unauthorized' });
+    // The body also carries a human-readable message; the contract is the code.
+    expect(body).toMatchObject({ error: 'unauthorized' });
   });
 
   it('GET /api/leads returns 200 + array with the correct secret', async () => {

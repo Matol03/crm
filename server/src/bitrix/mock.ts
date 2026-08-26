@@ -144,6 +144,10 @@ export class MockBitrixClient implements BitrixClient {
     return `${this.portalBaseUrl}/crm/lead/details/${id}/`;
   }
 
+  async deleteLead(id: number): Promise<void> {
+    if (!this.leads.delete(id)) throw new Error(`lead ${id} not found`);
+  }
+
   async setLeadStatus(id: number, statusId: string): Promise<void> {
     const lead = this.leads.get(id);
     if (!lead) throw new Error(`lead ${id} not found`);

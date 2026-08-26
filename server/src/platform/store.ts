@@ -135,6 +135,65 @@ export class PlatformLeadStore implements BitrixClient {
     return `#/leads/${id}`;
   }
 
+  /** Remove a lead from the platform's own store. */
+  async deleteLead(id: number): Promise<void> {
+    const info = this.db.handle.prepare('DELETE FROM platform_leads WHERE id = ?').run(id);
+    if (Number(info.changes ?? 0) === 0) throw new Error(`lead ${id} not found`);
+  }
+
+  /**
+   * Fold one lead into another: the surviving lead gains any contact details
+   * the duplicate had, and the duplicate is removed. Values already present on
+   * the survivor win, so a confirmed record is never overwritten by a thinner
+   * duplicate — only gaps are filled.
+   */
+  async mergeLeads(survivorId: number, duplicateId: number): Promise<void> {
+    if (survivorId === duplicateId) throw new Error('cannot merge a lead into itself');
+    const get = this.db.handle.prepare('SELECT * FROM platform_leads WHERE id = ?');
+    const survivor = get.get(survivorId) as Record<string, unknown> | undefined;
+    const dup = get.get(duplicateId) as Record<string, unknown> | undefined;
+    if (!survivor || !dup) throw new Error('lead not found');
+
+    const phones = unique([
+      ...parseComm(String(survivor['phones_json'] ?? '[]')),
+      ...parseComm(String(dup['phones_json'] ?? '[]')),
+    ]);
+    const emails = unique([
+      ...parseComm(String(survivor['emails_json'] ?? '[]')),
+      ...parseComm(String(dup['emails_json'] ?? '[]')),
+    ]);
+    const fill = (key: string): string | null => {
+      const v = survivor[key] ?? dup[key];
+      return v == null || v === '' ? null : String(v);
+    };
+
+    this.db.handle
+      .prepare(
+        `UPDATE platform_leads SET
+           name = ?, company = ?, position = ?, country = ?,
+           lead_type = ?, region = ?, exhibition = ?, product_interest = ?, priority = ?,
+           phones_json = ?, emails_json = ?,
+           updated_at = datetime('now')
+         WHERE id = ?`,
+      )
+      .run(
+        fill('name'), fill('company'), fill('position'), fill('country'),
+        fill('lead_type'), fill('region'), fill('exhibition'),
+        fill('product_interest'), fill('priority'),
+        JSON.stringify(phones), JSON.stringify(emails),
+        survivorId,
+      );
+    await this.deleteLead(duplicateId);
+  }
+
+  /** The mirrored portal id for a lead, when it has one. */
+  bitrixIdFor(id: number): number | null {
+    const row = this.db.handle
+      .prepare('SELECT bitrix_lead_id FROM platform_leads WHERE id = ?')
+      .get(id) as { bitrix_lead_id: number | null } | undefined;
+    return row?.bitrix_lead_id ?? null;
+  }
+
   async setLeadStatus(id: number, statusId: string): Promise<void> {
     this.db.handle
       .prepare(`UPDATE platform_leads SET status_id = ?, updated_at = datetime('now') WHERE id = ?`)
