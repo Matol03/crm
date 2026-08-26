@@ -276,3 +276,81 @@ describe('deleting a lead whose portal id was never recorded', () => {
     db.close();
   });
 });
+
+describe('leads with no phone or e-mail', () => {
+  /** A portal that can only be searched by title, like the real one. */
+  function portalWithTitles(titles: Record<string, number[]>) {
+    const deleted: number[] = [];
+    const portal = new MockBitrixClient();
+    // No comms recorded, so the duplicate search finds nothing — the real
+    // situation for a lead captured without a phone or e-mail.
+    portal.findDuplicate = async () => null;
+    portal.findServiceLeadsByTitle = async (t: string) => titles[t] ?? [];
+    portal.deleteLead = async (id: number) => { deleted.push(id); };
+    return { portal, deleted };
+  }
+
+  async function importedNoComms(db: Db, title: string) {
+    const store = new PlatformLeadStore({ db });
+    const [res] = await store.writeLeads([write({ title, phones: [], emails: [] })]);
+    db.handle.prepare('UPDATE platform_leads SET bitrix_lead_id = NULL').run();
+    return res!.bitrixLeadId!;
+  }
+
+  it('finds the portal copy by title when there are no contact details', async () => {
+    const db = freshDb();
+    const { portal, deleted } = portalWithTitles({ 'Ana Marks — Iron Fist company': [23] });
+    const id = await importedNoComms(db, 'Ana Marks — Iron Fist company');
+
+    await sink(db, portal).deleteLead(id);
+
+    expect(deleted).toEqual([23]);
+    expect(await new PlatformRepo({ db }).leads()).toHaveLength(0);
+    db.close();
+  });
+
+  it('removes every copy the portal holds, not just the first', async () => {
+    // The portal really does hold more than one copy of some leads; leaving the
+    // others behind is the same orphan problem in smaller form.
+    const db = freshDb();
+    const { portal, deleted } = portalWithTitles({ 'John Newman — Lanterns Organization': [21, 29] });
+    const id = await importedNoComms(db, 'John Newman — Lanterns Organization');
+
+    await sink(db, portal).deleteLead(id);
+
+    expect(deleted.sort((a, b) => a - b)).toEqual([21, 29]);
+    db.close();
+  });
+
+  it('removes the absorbed duplicate from the portal when merging', async () => {
+    const db = freshDb();
+    const { portal, deleted } = portalWithTitles({ 'Dup — Temporary': [77] });
+    const store = new PlatformLeadStore({ db });
+    const [keep] = await store.writeLeads([write({ localId: 'keep' })]);
+    const [drop] = await store.writeLeads([
+      write({
+        localId: 'drop', title: 'Dup — Temporary', phones: [], emails: [],
+        service: { teamsGroupId: 'g', teamsMessageIds: [], teamsAuthor: 'other@example.com' },
+      }),
+    ]);
+    db.handle.prepare('UPDATE platform_leads SET bitrix_lead_id = NULL WHERE id = ?').run(drop!.bitrixLeadId!);
+
+    await sink(db, portal).mergeLeads(keep!.bitrixLeadId!, drop!.bitrixLeadId!);
+
+    expect(deleted).toEqual([77]);
+    expect(await new PlatformRepo({ db }).leads()).toHaveLength(1);
+    db.close();
+  });
+
+  it('never deletes a lead the service did not create', async () => {
+    // findServiceLeadsByTitle filters on the service's own marker field, so a
+    // hand-entered lead with the same title is not returned and cannot be lost.
+    const db = freshDb();
+    const { portal, deleted } = portalWithTitles({});   // portal returns nothing
+    const id = await importedNoComms(db, 'Entered By Hand');
+
+    await expect(sink(db, portal).deleteLead(id)).rejects.toThrow(/no matching lead was found/i);
+    expect(deleted).toEqual([]);
+    db.close();
+  });
+});

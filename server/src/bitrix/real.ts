@@ -154,6 +154,29 @@ export class RealBitrixClient implements BitrixClient {
     return match?.bitrixLeadId ?? null;
   }
 
+  /**
+   * Find leads by title that THIS SERVICE created.
+   *
+   * The duplicate search only looks at phone and e-mail, so a lead captured
+   * without either cannot be found that way — and those copies were being left
+   * behind in the portal. Title is the remaining handle.
+   *
+   * The UF_CRM_TEAMS_AUTHOR filter is the safety property: it is written only
+   * by this service, so a title that happens to match a lead somebody entered
+   * by hand can never be returned, and therefore never deleted.
+   */
+  async findServiceLeadsByTitle(title: string): Promise<number[]> {
+    if (!title.trim()) return [];
+    const env = await this.call<Array<Record<string, unknown>>>('crm.lead.list', {
+      filter: { TITLE: title, '!UF_CRM_TEAMS_AUTHOR': '' },
+      select: ['ID', 'TITLE', 'UF_CRM_TEAMS_AUTHOR'],
+    });
+    return (env.result ?? [])
+      .filter((r) => String(r['UF_CRM_TEAMS_AUTHOR'] ?? '').trim() !== '')
+      .map((r) => Number(r['ID']))
+      .filter((n) => Number.isFinite(n));
+  }
+
   // ── writes (batched) ─────────────────────────────────────────
 
   async writeLeads(leads: LeadWrite[]): Promise<LeadWriteResult[]> {

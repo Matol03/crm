@@ -184,6 +184,14 @@ export class PlatformLeadStore implements BitrixClient {
     await this.deleteLead(duplicateId);
   }
 
+  /** A lead's title, for locating copies the duplicate search cannot reach. */
+  titleFor(id: number): string | null {
+    const row = this.db.handle
+      .prepare('SELECT title FROM platform_leads WHERE id = ?')
+      .get(id) as { title: string | null } | undefined;
+    return row?.title ?? null;
+  }
+
   /** A lead's contact details, for locating its copy in the portal. */
   commsFor(id: number): { phones: string[]; emails: string[] } {
     const row = this.db.handle

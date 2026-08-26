@@ -24,10 +24,15 @@ import type {
 import type { Db } from '../db/index.js';
 import type { PlatformLeadStore } from './store.js';
 
+/** Optional portal capabilities used to locate copies we did not record. */
+export interface PortalLookup {
+  findServiceLeadsByTitle?(title: string): Promise<number[]>;
+}
+
 export interface DualSinkOptions {
   db: Db;
   platform: PlatformLeadStore;
-  bitrix: BitrixClient;
+  bitrix: BitrixClient & PortalLookup;
   /** Structured, PII-free notice when the mirror fails (S13). */
   onWarn?: (e: { event: string; localId: string; detail: string }) => void;
   /** Remove the portal copy when a lead is rejected here. Default true. */
@@ -37,7 +42,7 @@ export interface DualSinkOptions {
 export class DualLeadSink implements BitrixClient {
   private readonly db: Db;
   private readonly platform: PlatformLeadStore;
-  private readonly bitrix: BitrixClient;
+  private readonly bitrix: BitrixClient & PortalLookup;
   private readonly onWarn: (e: { event: string; localId: string; detail: string }) => void;
   private readonly deleteOnReject: boolean;
 
@@ -125,7 +130,7 @@ export class DualLeadSink implements BitrixClient {
       .get(id) as { local_id: string; bitrix_lead_id: number | null } | undefined;
     if (!row) return;
     // Same recovery as deletion: an unrecorded id does not mean no copy exists.
-    const portalId = row.bitrix_lead_id ?? (await this.resolvePortalId(id));
+    const portalId = row.bitrix_lead_id ?? (await this.resolvePortalIds(id))[0] ?? null;
     if (portalId == null || !this.bitrix.setLeadStatus) return;
     row.bitrix_lead_id = portalId;
     if (!this.bitrix.setLeadStatus) return;
@@ -169,11 +174,11 @@ export class DualLeadSink implements BitrixClient {
   async deleteLead(id: number): Promise<void> {
     // Resolve the portal copy BEFORE the local row is gone: afterwards there is
     // nothing left to look it up by.
-    const bitrixId = await this.resolvePortalId(id);
+    const bitrixIds = await this.resolvePortalIds(id);
     await this.platform.deleteLead(id);
 
     if (!this.bitrix.deleteLead) return;
-    if (bitrixId == null) {
+    if (bitrixIds.length === 0) {
       // Previously this returned silently and the portal copy was left behind
       // with no indication. Say so: an orphan the sales team still works is
       // exactly what deleting was meant to prevent.
@@ -182,12 +187,18 @@ export class DualLeadSink implements BitrixClient {
         'Lead removed here, but no matching lead was found in Bitrix24 — check the portal manually.',
       );
     }
-    try {
-      await this.bitrix.deleteLead(bitrixId);
-    } catch (e) {
-      const detail = e instanceof Error ? e.message : String(e);
-      this.onWarn({ event: 'bitrix_delete_failed', localId: String(id), detail });
-      throw new Error(`Lead removed here, but not in Bitrix24: ${detail}`);
+    const failures: string[] = [];
+    for (const bitrixId of bitrixIds) {
+      try {
+        await this.bitrix.deleteLead(bitrixId);
+      } catch (e) {
+        const detail = e instanceof Error ? e.message : String(e);
+        this.onWarn({ event: 'bitrix_delete_failed', localId: String(id), detail });
+        failures.push(`#${bitrixId}: ${detail}`);
+      }
+    }
+    if (failures.length) {
+      throw new Error(`Lead removed here, but not in Bitrix24 — ${failures.join('; ')}`);
     }
   }
 
@@ -200,33 +211,62 @@ export class DualLeadSink implements BitrixClient {
    * behind, so ask the portal to find it by contact details, which is how it
    * was matched in the first place.
    */
-  private async resolvePortalId(id: number): Promise<number | null> {
+  private async resolvePortalIds(id: number): Promise<number[]> {
     const stored = this.platform.bitrixIdFor(id);
-    if (stored != null) return stored;
+    if (stored != null) return [stored];
 
+    // 1. By contact details — how the copy was matched when it was written.
     const comm = this.platform.commsFor(id);
-    if (!comm.phones.length && !comm.emails.length) return null;
-    try {
-      const match = await this.bitrix.findDuplicate(comm);
-      return match?.bitrixLeadId ?? null;
-    } catch {
-      // A lookup failure must not be read as "there is no copy".
-      return null;
+    if (comm.phones.length || comm.emails.length) {
+      try {
+        const match = await this.bitrix.findDuplicate(comm);
+        if (match) return [match.bitrixLeadId];
+      } catch {
+        // A lookup failure must not be read as "there is no copy".
+      }
     }
+
+    // 2. By title. A lead captured with no phone and no e-mail cannot be found
+    // by the duplicate search at all, and its copies were being left behind.
+    // The search is restricted to leads this service created, so a hand-entered
+    // lead with the same title is never touched. Every match is returned: the
+    // portal can hold more than one copy, and leaving the others is the same
+    // orphan problem in smaller form.
+    const title = this.platform.titleFor(id);
+    if (title && this.bitrix.findServiceLeadsByTitle) {
+      try {
+        return await this.bitrix.findServiceLeadsByTitle(title);
+      } catch {
+        /* fall through to "none found" */
+      }
+    }
+    return [];
   }
 
   /** Fold one lead into another locally, then remove the duplicate's portal copy. */
   async mergeLeads(survivorId: number, duplicateId: number): Promise<void> {
-    const duplicateBitrixId = await this.resolvePortalId(duplicateId);
+    const duplicateBitrixIds = await this.resolvePortalIds(duplicateId);
     await this.platform.mergeLeads(survivorId, duplicateId);
 
-    if (duplicateBitrixId == null || !this.bitrix.deleteLead) return;
-    try {
-      await this.bitrix.deleteLead(duplicateBitrixId);
-    } catch (e) {
-      const detail = e instanceof Error ? e.message : String(e);
-      this.onWarn({ event: 'bitrix_delete_failed', localId: String(duplicateId), detail });
-      throw new Error(`Leads merged here, but the duplicate remains in Bitrix24: ${detail}`);
+    if (!this.bitrix.deleteLead) return;
+    if (duplicateBitrixIds.length === 0) {
+      this.onWarn({ event: 'bitrix_copy_not_found', localId: String(duplicateId), detail: 'no portal copy found' });
+      throw new Error(
+        'Leads merged here, but no matching duplicate was found in Bitrix24 — check the portal manually.',
+      );
+    }
+    const failures: string[] = [];
+    for (const bid of duplicateBitrixIds) {
+      try {
+        await this.bitrix.deleteLead(bid);
+      } catch (e) {
+        const detail = e instanceof Error ? e.message : String(e);
+        this.onWarn({ event: 'bitrix_delete_failed', localId: String(duplicateId), detail });
+        failures.push(`#${bid}: ${detail}`);
+      }
+    }
+    if (failures.length) {
+      throw new Error(`Leads merged here, but the duplicate remains in Bitrix24 — ${failures.join('; ')}`);
     }
   }
 
