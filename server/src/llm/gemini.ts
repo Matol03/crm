@@ -67,7 +67,7 @@ export class GeminiLlmClient implements LlmClient {
  */
 function defaultGeminiTransport(opts: GeminiLlmOptions): ChatTransport {
   const baseUrl = (opts.baseUrl ?? 'https://generativelanguage.googleapis.com').replace(/\/$/, '');
-  const model = opts.model ?? 'gemini-2.5-flash';
+  const model = opts.model ?? 'gemini-3.6-flash';
   const doFetch = opts.fetchImpl ?? fetch;
   return async (messages) => {
     const systemText = messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n\n');

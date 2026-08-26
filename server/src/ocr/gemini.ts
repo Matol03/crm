@@ -56,7 +56,7 @@ export class GeminiOcrClient implements OcrClient {
 
 function defaultVisionTransport(opts: GeminiOcrOptions): VisionTransport {
   const baseUrl = (opts.baseUrl ?? 'https://generativelanguage.googleapis.com').replace(/\/$/, '');
-  const model = opts.model ?? 'gemini-2.5-flash';
+  const model = opts.model ?? 'gemini-3.6-flash';
   const doFetch = opts.fetchImpl ?? fetch;
   return async (bytes, mimeType) => {
     const res = await fetchWithRetry(doFetch, `${baseUrl}/v1beta/models/${model}:generateContent?key=${opts.apiKey}`, {

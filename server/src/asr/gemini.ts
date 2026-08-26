@@ -87,7 +87,7 @@ export function normaliseMime(mimeType: string): string {
 
 function defaultAudioTransport(opts: GeminiAsrOptions): AudioTransport {
   const baseUrl = (opts.baseUrl ?? 'https://generativelanguage.googleapis.com').replace(/\/$/, '');
-  const model = opts.model ?? 'gemini-2.5-flash';
+  const model = opts.model ?? 'gemini-3.6-flash';
   const doFetch = opts.fetchImpl ?? fetch;
 
   return async (bytes, mimeType) => {
