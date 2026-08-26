@@ -229,7 +229,8 @@ export class DualLeadSink implements BitrixClient {
   }
 
   /**
-   * The portal id for a lead.
+   * Every portal copy of a lead. Public so cleanup tooling applies exactly the
+   * same rules — including the guards — rather than reimplementing them.
    *
    * Leads created before this service recorded the mirror id — and any whose
    * mirror write failed — have no stored id, yet a copy may well exist in the
@@ -237,7 +238,7 @@ export class DualLeadSink implements BitrixClient {
    * behind, so ask the portal to find it by contact details, which is how it
    * was matched in the first place.
    */
-  private async resolvePortalIds(id: number): Promise<number[]> {
+  async resolvePortalIds(id: number): Promise<number[]> {
     const found = new Set<number>();
 
     // 1. The id recorded when the copy was written, if we have one.
@@ -351,6 +352,41 @@ export class DualLeadSink implements BitrixClient {
     if (failures.length) {
       throw new Error(`Leads merged here, but the duplicate remains in Bitrix24 — ${failures.join('; ')}`);
     }
+  }
+
+  /**
+   * Remove a lead's portal copies while keeping the lead here.
+   *
+   * Used to withdraw records that reached the CRM before publishing moved to
+   * completion. Unlike deleteLead this does not touch the local lead: it is
+   * still a lead, it simply has no CRM record until someone accepts it.
+   */
+  async withdrawFromPortal(id: number): Promise<{ removed: number[]; failures: string[] }> {
+    const copies = await this.resolvePortalIds(id);
+    const removed: number[] = [];
+    const failures: string[] = [];
+    if (!copies.length || !this.bitrix.deleteLead) return { removed, failures };
+
+    for (const copy of copies) {
+      try {
+        await this.bitrix.deleteLead(copy);
+        removed.push(copy);
+      } catch (e) {
+        const detail = e instanceof Error ? e.message : String(e);
+        this.onWarn({ event: 'bitrix_delete_failed', localId: String(id), detail });
+        failures.push(`#${copy}: ${detail}`);
+      }
+    }
+    // Clear the link only for copies that actually went, so a failed one is
+    // still found next time rather than being forgotten about.
+    if (removed.length && !failures.length) {
+      this.db.handle
+        .prepare(`UPDATE platform_leads
+                     SET bitrix_lead_id = NULL, bitrix_synced_at = NULL, bitrix_error = NULL
+                   WHERE id = ?`)
+        .run(id);
+    }
+    return { removed, failures };
   }
 
   /** Portal URL for a mirrored lead, for the console's outbound link. */
