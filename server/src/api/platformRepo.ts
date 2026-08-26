@@ -213,15 +213,38 @@ export class PlatformRepo {
 
   /** Pipeline rows that failed, carry warnings, or await an attachment. */
   async needsAttention(): Promise<AttentionItem[]> {
-    const rows = this.db.listLeads();
-    return rows
+    // The pipeline row's `bitrix_lead_id` is whatever the sink returned when the
+    // lead was written — for older rows that is a PORTAL id, which does not
+    // exist in this store. Resolving through local_id gives the id the console
+    // can actually open; otherwise "Open lead" leads to a lead that is not here.
+    const rows = this.db.handle.prepare('SELECT id, local_id, title FROM platform_leads').all() as Array<{
+      id: number; local_id: string; title: string | null;
+    }>;
+    const byLocalId = new Map(rows.map((r) => [r.local_id, r.id]));
+
+    // A pipeline row whose lead was MERGED into another (same manager, same
+    // phone/e-mail) has no row of its own, because the merge kept the first
+    // lead's local id. Without a fallback those items offer no way to open
+    // anything. Match on title, and only when it is unambiguous — linking to
+    // the wrong lead would be worse than offering no link at all.
+    const byTitle = new Map<string, number | null>();
+    for (const r of rows) {
+      const key = (r.title ?? '').trim().toLowerCase();
+      if (!key) continue;
+      byTitle.set(key, byTitle.has(key) ? null : r.id);
+    }
+    const resolve = (localId: string, title: string | null): number | null =>
+      byLocalId.get(localId) ?? byTitle.get((title ?? '').trim().toLowerCase()) ?? null;
+
+    return this.db
+      .listLeads()
       .filter((r) => {
         const warns = (safeJson(r.warnings_json) as string[] | null) ?? [];
         return r.status === 'failed' || r.needs_attachment_retry === 1 || warns.length > 0;
       })
       .map((r) => ({
         localId: r.id,
-        bitrixLeadId: r.bitrix_lead_id,
+        bitrixLeadId: resolve(r.id, r.title),
         title: r.title,
         status: r.status,
         needsAttachmentRetry: r.needs_attachment_retry === 1,

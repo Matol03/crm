@@ -58,7 +58,7 @@ export async function renderUnresolved(root) {
             statusBadge(it.status),
             it.needsAttachmentRetry && badge('Attachment pending', 'warn')),
           h('div.t-xs.subtle', { style: { marginTop: '2px' } },
-            it.bitrixLeadId ? `Bitrix #${it.bitrixLeadId}` : 'Not written to Bitrix24',
+            it.bitrixLeadId ? `Lead #${it.bitrixLeadId}` : 'Not stored as a lead yet',
             ' · ', fmtDateTime(it.createdAt))),
         h('div.row',
           it.bitrixLeadId && h('button.btn.btn-sm', {

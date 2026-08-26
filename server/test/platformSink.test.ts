@@ -307,3 +307,72 @@ describe('name duplicate detection', () => {
     db.close();
   });
 });
+
+describe('needs-attention links', () => {
+  it('points at the platform lead id, not the id an old sink returned', async () => {
+    // Regression: the pipeline row kept the PORTAL id from when leads were
+    // written to Bitrix. "Open lead" then navigated to an id that does not
+    // exist in this store, and the console rendered sample data instead.
+    const db = freshDb();
+    db.upsertSession(bundle, 'received');
+    db.insertLead({
+      id: 'sess-1#seg-1', sessionId: 'sess-1', title: 'Anna Petrova — Nordwind',
+      status: 'done', fieldsJson: '{}', verbatim: '', aiSummaryRu: '',
+      warningsJson: JSON.stringify(['no employee mapping for author']),
+      needsAttachmentRetry: false,
+    });
+    db.setLeadBitrixId('sess-1#seg-1', 4821);   // a portal id, not ours
+
+    const store = new PlatformLeadStore({ db });
+    const [res] = await store.writeLeads([write()]);
+
+    const [item] = await new PlatformRepo({ db }).needsAttention();
+    expect(item!.bitrixLeadId).toBe(res!.bitrixLeadId);
+    expect(item!.bitrixLeadId).not.toBe(4821);
+
+    // ...and that id actually resolves to a lead.
+    expect(await new PlatformRepo({ db }).lead(item!.bitrixLeadId!)).not.toBeNull();
+    db.close();
+  });
+
+  it('links a merged lead to the lead that absorbed it', async () => {
+    const db = freshDb();
+    const store = new PlatformLeadStore({ db });
+    const [first] = await store.writeLeads([write()]);
+    // Same manager and phone -> merged, so this local id has no row of its own.
+    await store.writeLeads([write({ localId: 'sess-2#seg-1', sessionId: 'sess-2' })]);
+
+    db.upsertSession(bundle, 'received');
+    db.insertLead({
+      id: 'sess-2#seg-1', sessionId: 'sess-1', title: 'Anna Petrova — Nordwind',
+      status: 'done', fieldsJson: '{}', verbatim: '', aiSummaryRu: '',
+      warningsJson: JSON.stringify(['merged duplicate']), needsAttachmentRetry: false,
+    });
+
+    const [item] = await new PlatformRepo({ db }).needsAttention();
+    expect(item!.bitrixLeadId).toBe(first!.bitrixLeadId);
+    db.close();
+  });
+
+  it('leaves the link empty rather than guessing when the title is ambiguous', async () => {
+    const db = freshDb();
+    const store = new PlatformLeadStore({ db });
+    // Two different leads sharing a title, reported by different managers.
+    await store.writeLeads([write({ localId: 'a', phones: [{ value: '+49 1', type: 'WORK' }], emails: [] })]);
+    await store.writeLeads([write({
+      localId: 'b', phones: [{ value: '+49 2', type: 'WORK' }], emails: [],
+      service: { teamsGroupId: 'g', teamsMessageIds: [], teamsAuthor: 'other@example.com' },
+    })]);
+
+    db.upsertSession(bundle, 'received');
+    db.insertLead({
+      id: 'orphan', sessionId: 'sess-1', title: 'Anna Petrova — Nordwind',
+      status: 'failed', fieldsJson: '{}', verbatim: '', aiSummaryRu: '',
+      warningsJson: '[]', needsAttachmentRetry: false,
+    });
+
+    const orphan = (await new PlatformRepo({ db }).needsAttention()).find((i) => i.localId === 'orphan');
+    expect(orphan!.bitrixLeadId).toBeNull();
+    db.close();
+  });
+});

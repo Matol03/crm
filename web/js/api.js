@@ -75,8 +75,18 @@ async function call(path) {
     throw new ApiError(body.message || 'No lead store is configured.', { kind: 'crm' });
   }
   if (res.status === 404) {
-    // The page loaded but the API route does not exist — this is a static-only
-    // deployment (e.g. Vercel), which cannot run the poller or reach Bitrix24.
+    // Two very different things arrive as 404 and must not be confused:
+    //   - a working service saying "no such record" (answers JSON)
+    //   - a static host with no service behind it at all (answers its own HTML)
+    // Treating the first as the second marked a live service as dead; treating
+    // it as a generic failure let a missing lead fall back to sample data.
+    const isJson = (res.headers.get('content-type') || '').includes('application/json');
+    if (isJson) {
+      // The service is alive and answered — do not touch the connection state.
+      connection.live = true;
+      connection.reason = '';
+      throw new ApiError('That record no longer exists.', { kind: 'notfound' });
+    }
     connection.live = false;
     connection.reason = 'No service behind this page';
     throw new ApiError(
@@ -230,10 +240,21 @@ export async function getLeads() {
 }
 
 export async function getLead(bitrixId) {
-  const l = await callOrSample(
-    `/api/crm/leads/${encodeURIComponent(bitrixId)}`,
-    () => ({ ...sample.LEAD_DETAIL, bitrixLeadId: Number(bitrixId) || sample.LEAD_DETAIL.bitrixLeadId }),
-  );
+  const path = `/api/crm/leads/${encodeURIComponent(bitrixId)}`;
+  let l;
+  try {
+    l = await call(path);
+    dataSource.mode = 'live';
+    dataSource.reason = '';
+  } catch (err) {
+    // A lead that does not exist must NEVER render as sample content: the
+    // reader would be looking at invented details under a real lead's id.
+    // Only a genuine outage falls back, and it is banner-ed as sample data.
+    if (err?.kind === 'notfound') return null;
+    dataSource.mode = 'sample';
+    dataSource.reason = err?.message || 'The live service could not be reached.';
+    l = { ...sample.LEAD_DETAIL, bitrixLeadId: Number(bitrixId) || sample.LEAD_DETAIL.bitrixLeadId };
+  }
   const msgs = (l.sourceMessages || []).map((m, i) => ({
     id: m.messageId || `m-${i}`,
     ts: m.timestamp,
