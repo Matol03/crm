@@ -60,7 +60,9 @@ register('leads', page(async () => {
 register('unresolved', page(async () => (await import('./pages/unresolved.js')).renderUnresolved));
 register('duplicates', page(async () => (await import('./pages/duplicates.js')).renderDuplicates));
 register('analytics',  page(async () => (await import('./pages/analytics.js')).renderAnalytics));
-register('logs',       page(async () => (await import('./pages/logs.js')).renderLogs));
+// The activity log names service operations and is gated to admins by the
+// API; registering it as admin-only keeps the nav honest about that.
+register('logs',       page(async () => (await import('./pages/logs.js')).renderLogs, { admin: true }));
 
 register('campaign',     page(async () => (await import('./pages/admin/campaign.js')).renderCampaign, { admin: true }));
 register('channels',     page(async () => (await import('./pages/admin/channels.js')).renderChannels, { admin: true }));

@@ -52,4 +52,4 @@ function emit() {
 }
 
 /** Routes only an administrator may open. */
-export const ADMIN_ROUTES = new Set(['campaign', 'channels', 'users', 'integrations', 'diagnostics']);
+export const ADMIN_ROUTES = new Set(['campaign', 'channels', 'users', 'integrations', 'diagnostics', 'logs']);

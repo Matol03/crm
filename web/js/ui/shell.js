@@ -20,7 +20,7 @@ const MAIN_NAV = [
   { route: 'unresolved', label: 'Needs attention', icon: 'unresolved' },
   { route: 'duplicates', label: 'Duplicates', icon: 'duplicates' },
   { route: 'analytics',  label: 'Analytics',  icon: 'analytics' },
-  { route: 'logs',       label: 'Activity log', icon: 'clock' },
+  { route: 'logs',       label: 'Activity log', icon: 'clock', admin: true },
 ];
 
 const ADMIN_NAV = [
@@ -55,7 +55,9 @@ export function renderSidebar() {
   const activeQuery = new URLSearchParams(route.query).toString();
 
   const groups = [
-    h('div.nav-group', MAIN_NAV.map((item) => {
+    // An entry marked admin is dropped for other roles: showing a link that
+    // leads straight to "access required" is noise, not information.
+    h('div.nav-group', MAIN_NAV.filter((item) => !item.admin || isAdmin()).map((item) => {
       const rows = [navItem(item, route.name, item.children ? activeQuery : activeQuery)];
       // Sub-navigation for Leads, only while that section is open.
       if (item.children && route.name === item.route) {
