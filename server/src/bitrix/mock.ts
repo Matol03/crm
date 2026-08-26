@@ -138,6 +138,9 @@ export class MockBitrixClient implements BitrixClient {
     return `${this.portalBaseUrl}/crm/lead/details/${id}/`;
   }
 
+  /** Optional in the contract; tests override it to model a title search. */
+  findServiceLeadsByTitle?: (title: string) => Promise<number[]>;
+
   async deleteLead(id: number): Promise<void> {
     if (!this.leads.delete(id)) throw new Error(`lead ${id} not found`);
   }

@@ -354,3 +354,77 @@ describe('leads with no phone or e-mail', () => {
     db.close();
   });
 });
+
+describe('leads the portal holds more than one copy of', () => {
+  /** Portal that knows a recorded id AND extra copies under the same title. */
+  function portalWithCopies(title: string, ids: number[]) {
+    const deleted: number[] = [];
+    const portal = new MockBitrixClient();
+    portal.findDuplicate = async () => null;
+    portal.findServiceLeadsByTitle = async (t: string) => (t === title ? ids : []);
+    portal.deleteLead = async (id: number) => { deleted.push(id); };
+    return { portal, deleted };
+  }
+
+  it('removes every copy, not only the one whose id was recorded', async () => {
+    // The reported symptom: the lead vanished here but was still in Bitrix,
+    // because a recorded id short-circuited the search and the portal held
+    // three copies of that lead.
+    const db = freshDb();
+    const title = 'Anna Weber — BMW AG';
+    const { portal, deleted } = portalWithCopies(title, [5, 19, 27]);
+
+    const store = new PlatformLeadStore({ db });
+    const [res] = await store.writeLeads([write({ title, phones: [], emails: [] })]);
+    db.handle.prepare('UPDATE platform_leads SET bitrix_lead_id = 5 WHERE id = ?').run(res!.bitrixLeadId!);
+
+    await sink(db, portal).deleteLead(res!.bitrixLeadId!);
+
+    expect(deleted.sort((a, b) => a - b)).toEqual([5, 19, 27]);
+    db.close();
+  });
+
+  it('merging removes every copy of the absorbed duplicate', async () => {
+    const db = freshDb();
+    const title = 'Dup — Twice Over';
+    const { portal, deleted } = portalWithCopies(title, [41, 43]);
+    const store = new PlatformLeadStore({ db });
+    const [keep] = await store.writeLeads([write({ localId: 'keep' })]);
+    const [drop] = await store.writeLeads([
+      write({
+        localId: 'drop', title, phones: [], emails: [],
+        service: { teamsGroupId: 'g', teamsMessageIds: [], teamsAuthor: 'other@example.com' },
+      }),
+    ]);
+
+    await sink(db, portal).mergeLeads(keep!.bitrixLeadId!, drop!.bitrixLeadId!);
+
+    expect(deleted.sort((a, b) => a - b)).toEqual([41, 43]);
+    expect(await new PlatformRepo({ db }).leads()).toHaveLength(1);
+    db.close();
+  });
+
+  it('does not take another lead the copies when two share a title', async () => {
+    // Two distinct platform leads with the same title: title-based cleanup is
+    // skipped, because it cannot tell whose copies those are.
+    const db = freshDb();
+    const title = 'Same Name — Same Company';
+    const { portal, deleted } = portalWithCopies(title, [61, 63]);
+
+    const store = new PlatformLeadStore({ db });
+    const [a] = await store.writeLeads([write({ localId: 'a', title, phones: [{ value: '+49 1', type: 'WORK' }], emails: [] })]);
+    await store.writeLeads([
+      write({
+        localId: 'b', title, phones: [{ value: '+49 2', type: 'WORK' }], emails: [],
+        service: { teamsGroupId: 'g', teamsMessageIds: [], teamsAuthor: 'other@example.com' },
+      }),
+    ]);
+    db.handle.prepare('UPDATE platform_leads SET bitrix_lead_id = 61 WHERE id = ?').run(a!.bitrixLeadId!);
+
+    await sink(db, portal).deleteLead(a!.bitrixLeadId!);
+
+    // Only the recorded copy — never the other lead's.
+    expect(deleted).toEqual([61]);
+    db.close();
+  });
+});

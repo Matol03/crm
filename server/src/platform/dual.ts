@@ -212,39 +212,51 @@ export class DualLeadSink implements BitrixClient {
    * was matched in the first place.
    */
   private async resolvePortalIds(id: number): Promise<number[]> {
-    const stored = this.platform.bitrixIdFor(id);
-    if (stored != null) return [stored];
+    const found = new Set<number>();
 
-    // 1. By contact details — how the copy was matched when it was written.
+    // 1. The id recorded when the copy was written, if we have one.
+    const stored = this.platform.bitrixIdFor(id);
+    if (stored != null) found.add(stored);
+
+    // 2. By contact details — how the copy was matched when it was written.
     const comm = this.platform.commsFor(id);
     if (comm.phones.length || comm.emails.length) {
       try {
         const match = await this.bitrix.findDuplicate(comm);
-        if (match) return [match.bitrixLeadId];
+        if (match) found.add(match.bitrixLeadId);
       } catch {
         // A lookup failure must not be read as "there is no copy".
       }
     }
 
-    // 2. By title. A lead captured with no phone and no e-mail cannot be found
-    // by the duplicate search at all, and its copies were being left behind.
-    // The search is restricted to leads this service created, so a hand-entered
-    // lead with the same title is never touched. Every match is returned: the
-    // portal can hold more than one copy, and leaving the others is the same
-    // orphan problem in smaller form.
+    // 3. By title. Two reasons this runs even when a stored id exists: a lead
+    // captured with no phone and no e-mail cannot be found by the duplicate
+    // search at all, AND the portal genuinely holds several copies of some
+    // leads. Stopping at the recorded id removed one copy and left the rest —
+    // which is what "deleted here but still in Bitrix" looked like.
+    //
+    // Restricted to leads this service created, so a hand-entered lead is never
+    // returned; and skipped when another platform lead shares the title, so
+    // deleting one lead cannot take another lead's copies with it.
     const title = this.platform.titleFor(id);
-    if (title && this.bitrix.findServiceLeadsByTitle) {
+    if (title && this.bitrix.findServiceLeadsByTitle && this.platform.countWithTitle(title) <= 1) {
       try {
-        return await this.bitrix.findServiceLeadsByTitle(title);
+        for (const other of await this.bitrix.findServiceLeadsByTitle(title)) found.add(other);
       } catch {
-        /* fall through to "none found" */
+        /* keep whatever the earlier steps found */
       }
     }
-    return [];
+    return [...found];
   }
 
-  /** Fold one lead into another locally, then remove the duplicate's portal copy. */
+  /**
+   * Fold one lead into another locally, then remove every portal copy of the
+   * absorbed duplicate. Leaving those behind is precisely the duplicate the
+   * merge was meant to resolve.
+   */
   async mergeLeads(survivorId: number, duplicateId: number): Promise<void> {
+    // Resolve BEFORE the row is merged away: afterwards there is nothing left
+    // to look the copies up by.
     const duplicateBitrixIds = await this.resolvePortalIds(duplicateId);
     await this.platform.mergeLeads(survivorId, duplicateId);
 
@@ -255,6 +267,7 @@ export class DualLeadSink implements BitrixClient {
         'Leads merged here, but no matching duplicate was found in Bitrix24 — check the portal manually.',
       );
     }
+
     const failures: string[] = [];
     for (const bid of duplicateBitrixIds) {
       try {

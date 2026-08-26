@@ -192,6 +192,18 @@ export class PlatformLeadStore implements BitrixClient {
     return row?.title ?? null;
   }
 
+  /**
+   * How many platform leads share this title. Guards title-based cleanup: if
+   * two distinct leads carry the same title, deleting one must not take the
+   * other's portal copies with it.
+   */
+  countWithTitle(title: string): number {
+    const row = this.db.handle
+      .prepare('SELECT COUNT(*) AS n FROM platform_leads WHERE title = ?')
+      .get(title) as { n: number };
+    return row.n;
+  }
+
   /** A lead's contact details, for locating its copy in the portal. */
   commsFor(id: number): { phones: string[]; emails: string[] } {
     const row = this.db.handle
